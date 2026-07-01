@@ -1,0 +1,35 @@
+# --- Secrets / env ---
+.env
+*.pem
+*.key
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Data (PRD: raw data is git-ignored, versioned separately) ---
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+ai_models/*
+!ai_models/.gitkeep
+
+# --- Notebooks checkpoints ---
+.ipynb_checkpoints/
+
+# --- IDE ---
+.vscode/
+.idea/
+
+# --- Docker ---
+*.log
+
+# --- OS ---
+.DS_Store

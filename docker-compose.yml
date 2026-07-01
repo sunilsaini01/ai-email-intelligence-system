@@ -1,0 +1,47 @@
+# Local development stack: API + Postgres.
+#
+# Why depends_on with a healthcheck condition, not just depends_on:
+#   Plain `depends_on` only waits for the container to START, not for Postgres
+#   to be ready to accept connections — a classic source of "works on second
+#   run only" bugs. The healthcheck below makes the API wait for an actual
+#   successful `pg_isready` before starting.
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: email_ai_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-email_intelligence}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile
+    container_name: email_ai_api
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_HOST: postgres   # service name on the compose network, not localhost
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app   # live-reload mount for local dev only
+
+volumes:
+  postgres_data:
