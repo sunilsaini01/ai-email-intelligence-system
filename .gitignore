@@ -33,3 +33,27 @@ ai_models/*
 
 # --- OS ---
 .DS_Store
+
+PS C:\Users\kumar\Downloads\email-intelligence-system> dir
+
+
+    Directory: C:\Users\kumar\Downloads\email-intelligence-system
+
+
+Mode                 LastWriteTime         Length Name                                                                                     
+----                 -------------         ------ ----                                                                                     
+d-----        28-06-2026     17:30                ai_models                                                                                
+d-----        03-07-2026     17:23                backend                                                                                  
+d-----        01-07-2026     21:55                data                                                                                     
+d-----        28-06-2026     17:30                docker                                                                                   
+d-----        28-06-2026     17:30                docs                                                                                     
+d-----        28-06-2026     17:30                notebooks                                                                                
+-a----        28-06-2026     17:30            453 .gitignore                                                                               
+-a----        28-06-2026     17:30           1410 docker-compose.yml                                                                       
+-a----        28-06-2026     17:30            676 Makefile                                                                                 
+-a----        28-06-2026     17:30           2228 README.md                                                                                
+-a----        29-06-2026     09:18           9732 requirements.txt                                                                         
+-a----        02-07-2026     16:12         734268 structure.txt                                                                            
+
+
+PS C:\Users\kumar\Downloads\email-intelligence-system> 
