@@ -1,27 +1,30 @@
-# Why a Makefile: one memorable entrypoint instead of remembering flag
-# combinations for pytest/ruff/uvicorn across however many tools get added
-# over the project's life. `make test` never changes even if the underlying
-# command does.
+.PHONY: data validate test clean-interim
 
-.PHONY: install test lint format run docker-up docker-down
+data:
+	@echo "Step 1/5: Verifying checksums..."
+	python backend/scripts/data/verify_checksums.py
 
-install:
-	pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+	@echo "Step 2/5: Ingesting datasets..."
+	python backend/scripts/data/ingest.py
+
+	@echo "Step 3/5: Preprocessing..."
+	python backend/scripts/data/preprocess.py
+
+	@echo "Step 4/5: Assigning splits..."
+	python backend/scripts/data/assign_splits.py
+
+	@echo "Step 5/5: Building artifacts..."
+	python backend/scripts/data/build_artifacts.py
+
+	@echo "Pipeline complete."
+
+validate:
+	python backend/scripts/data/validate.py
 
 test:
-	cd backend && python -m pytest -v
+	python -m pytest tests/data/ -v
 
-lint:
-	cd backend && ruff check . && mypy app
+clean-interim:
+	rmdir /s /q data\interim
+	@echo "Interim cleared."
 
-format:
-	cd backend && black . && ruff check --fix .
-
-run:
-	cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-docker-up:
-	docker compose up --build
-
-docker-down:
-	docker compose down
