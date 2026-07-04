@@ -15,7 +15,8 @@ venv/
 
 # --- Data (PRD: raw data is git-ignored, versioned separately) ---
 data/raw/*
-data/processed/*
+data/processed/**
+!data/processed/*.dvc
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 ai_models/*
