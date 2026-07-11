@@ -48,11 +48,10 @@ class TFIDFVectorizer:
         
     def fit(self, texts: list[str]):
         """
-            Learn vocabulary and IDF scores.
-            """
+        Learn vocabulary and IDF scores from training data.
+        """
         self.vectorizer.fit(texts)
         return self
-
     def transform(self, texts: list[str]):
         """
         Transform texts into TF-IDF vectors.
