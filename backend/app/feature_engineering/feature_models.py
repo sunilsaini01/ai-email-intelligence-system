@@ -1,0 +1,73 @@
+from dataclasses import dataclass
+
+
+@dataclass
+class ContentFeatures:
+    """
+    Stores all numerical and boolean content-based features
+    extracted from an email.
+    """
+
+    # -----------------------
+    # Length Features
+    # -----------------------
+
+    char_count: int
+    word_count: int
+    sentence_count: int
+
+    avg_word_length: float
+    avg_sentence_length: float
+
+    # -----------------------
+    # Capitalization
+    # -----------------------
+
+    uppercase_word_count: int
+    uppercase_ratio: float
+
+    # -----------------------
+    # Punctuation
+    # -----------------------
+
+    exclamation_count: int
+    question_mark_count: int
+    ellipsis_count: int
+    total_punctuation_count: int
+    punctuation_density: float
+
+    # -----------------------
+    # Structural Features
+    # -----------------------
+
+    has_url: bool
+    url_count: int
+
+    has_email_address: bool
+    has_phone_number: bool
+
+    has_currency: bool
+
+    has_numbers: bool
+    number_ratio: float
+
+    # -----------------------
+    # Spam Signals
+    # -----------------------
+
+    spam_keyword_count: int
+    spam_keyword_ratio: float
+
+    # -----------------------
+    # Email Metadata
+    # -----------------------
+
+    is_reply: bool
+
+    subject_word_count: int
+    subject_is_uppercase: bool
+
+    subject_has_re_prefix: bool
+    subject_has_fwd_prefix: bool
+
+    subject_exclamation_count: int
