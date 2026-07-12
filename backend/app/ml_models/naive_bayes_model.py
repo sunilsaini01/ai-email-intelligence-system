@@ -1,7 +1,4 @@
 import numpy as np
-import joblib
-
-from pathlib import Path
 
 from sklearn.naive_bayes import (
     MultinomialNB,
@@ -66,19 +63,3 @@ def inspect_nb_features(
                 f"log_P: {log_probs[idx]:.4f}"
             )
             
-def save_model(
-    model,
-    path: str | Path,
-) -> None:
-    """
-    Save a trained Naive Bayes model to disk.
-    """
-    joblib.dump(model, path)
-    
-def load_model(
-    path: str | Path,
-):
-    """
-    Load a trained Naive Bayes model from disk.
-    """
-    return joblib.load(path)

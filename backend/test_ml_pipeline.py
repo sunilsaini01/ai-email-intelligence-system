@@ -1,0 +1,67 @@
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+from app.pipeline.ml_pipeline import MLPipeline
+from app.pipeline.pipeline_config import PipelineConfig
+from app.pipeline.ml_pipeline import MLPipeline
+
+texts = [
+    "free money click here",
+    "winner claim your prize",
+    "meeting scheduled tomorrow",
+    "project discussion today",
+    "limited time offer",
+    "regards thanks for update",
+]
+
+labels = [1, 1, 0, 0, 1, 0]
+
+vectorizer = TfidfVectorizer()
+
+X = vectorizer.fit_transform(texts)
+
+models = [
+    "logistic_regression",
+    "naive_bayes",
+    "svm",
+]
+
+for model_name in models:
+
+    print("\n" + "=" * 50)
+    print(f"Testing : {model_name}")
+    print("=" * 50)
+
+    config = PipelineConfig(
+    model_type=model_name,
+    )
+
+    pipeline = MLPipeline(config)
+    pipeline.fit(
+        X_train=X,
+        y_train=labels,
+    )
+
+    predictions = pipeline.predict(X)
+
+    print("\nPredictions")
+    print(predictions)
+
+    try:
+        probabilities = pipeline.predict_proba(X)
+
+        print("\nPrediction Probabilities")
+        print(probabilities)
+
+    except AttributeError:
+
+        print("\nNo probability output for this model.")
+
+    save_path = f"{model_name}.joblib"
+
+    pipeline.save(save_path)
+
+    print(f"\nModel Saved -> {save_path}")
+
+    pipeline.load(save_path)
+
+    print("Model Loaded Successfully")

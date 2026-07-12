@@ -20,7 +20,6 @@ def tune_logistic_regression(
 
     param_grid = {
         "C": [0.01, 0.1, 1.0, 10.0],
-        "penalty": ["l2"],
     }
 
     grid_search = GridSearchCV(

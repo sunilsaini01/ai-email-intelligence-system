@@ -1,6 +1,4 @@
 import numpy as np
-import joblib
-from pathlib import Path
 from sklearn.linear_model import LogisticRegression
 
 def train_logistic_regression(
@@ -15,14 +13,12 @@ def train_logistic_regression(
         Train a Logistic Regression model for email classification.
         """
         model = LogisticRegression(
-        C=C,
-        penalty=penalty,
-        solver="saga",
-        max_iter=max_iter,
-        class_weight=class_weight,
-        random_state=42,
-        n_jobs=-1,
-    )
+            C=C,
+            solver="saga",
+            max_iter=max_iter,
+            class_weight=class_weight,
+            random_state=42,
+        )
     
         model.fit(
         X_train,
@@ -54,20 +50,3 @@ def inspect_lr_weights(
     for idx in top_negative:
         print(f"  {feature_names[idx]:40s} weight: {weights[idx]:+.4f}")
         
-        
-def save_model(
-    model: LogisticRegression,
-    path: str | Path,
-) -> None:
-    """
-    Save a trained Logistic Regression model to disk.
-    """
-    joblib.dump(model, path)
-    
-def load_model(
-    path: str | Path,
-) -> LogisticRegression:
-    """
-    Load a trained Logistic Regression model from disk.
-    """
-    return joblib.load(path)

@@ -1,10 +1,8 @@
 from sklearn.feature_extraction.text import TfidfVectorizer
-
+from app.training.artifact_manager import ArtifactManager
 from app.ml_models.naive_bayes_model import (
     train_naive_bayes,
     inspect_nb_features,
-    save_model,
-    load_model,
 )
 
 # Sample Dataset
@@ -33,22 +31,16 @@ model = train_naive_bayes(
     y_train=labels,
 )
 
-# Save Model
+artifact_manager = ArtifactManager()
 
-save_model(
+artifact_manager.save_model(
     model,
-    "backend/models/naive_bayes.pkl",
+    "naive_bayes.joblib",
 )
 
-print("\n✅ Model saved successfully.")
-
-# Load Model
-
-loaded_model = load_model(
-    "backend/models/naive_bayes.pkl",
+loaded_model = artifact_manager.load_model(
+    "naive_bayes.joblib",
 )
-
-print("✅ Model loaded successfully.")
 
 # Predictions
 

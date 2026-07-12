@@ -1,7 +1,4 @@
-import joblib
 import numpy as np
-
-from pathlib import Path
 
 from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
@@ -78,23 +75,3 @@ def inspect_svm_weights(
         )
 
 
-def save_model(
-    model,
-    path: str | Path,
-) -> None:
-    """
-    Save a trained SVM model.
-    """
-    joblib.dump(
-        model,
-        path,
-    )
-
-
-def load_model(
-    path: str | Path,
-):
-    """
-    Load a trained SVM model.
-    """
-    return joblib.load(path)
