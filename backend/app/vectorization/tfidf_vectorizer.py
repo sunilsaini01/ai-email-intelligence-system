@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import joblib
+from pathlib import Path
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -66,8 +67,9 @@ class TFIDFVectorizer:
     
     def save(self, path: str):
         """
-            Save the trained TF-IDF vectorizer.
-            """
+        Save the trained TF-IDF vectorizer.
+        """
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(self.vectorizer, path)
 
     def load(self, path: str):
@@ -99,3 +101,15 @@ class TFIDFVectorizer:
                 self.vectorizer.idf_,
             )
         )
+        
+    def top_features(self, n: int = 20):
+        """
+        Return the top N features with the highest IDF scores.
+        """
+        scores = self.idf_scores()
+
+        return sorted(
+        scores.items(),
+        key=lambda x: x[1],
+        reverse=True
+        )[:n]

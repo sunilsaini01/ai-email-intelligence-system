@@ -41,3 +41,6 @@ loaded.load("backend/tfidf_vectorizer.pkl")
 
 print("\nLoaded Vocabulary")
 print(loaded.get_feature_names())
+
+print("\nTop Features")
+print(vectorizer.top_features())
