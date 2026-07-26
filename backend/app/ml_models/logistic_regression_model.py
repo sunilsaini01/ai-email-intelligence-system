@@ -42,11 +42,11 @@ def inspect_lr_weights(
     top_positive = np.argsort(weights)[-n_top:][::-1]
     top_negative = np.argsort(weights)[:n_top]
     
-    print(f"\nTop {n_top} features → {class_name}:")
+    print(f"\nTop {n_top} features -> {class_name}:")
     for idx in top_positive:
         print(f"  {feature_names[idx]:40s} weight: {weights[idx]:+.4f}")
 
-    print(f"\nTop {n_top} features → NOT {class_name}:")
+    print(f"\nTop {n_top} features -> NOT {class_name}:")
     for idx in top_negative:
         print(f"  {feature_names[idx]:40s} weight: {weights[idx]:+.4f}")
         

@@ -1,0 +1,44 @@
+{
+    "comparison": [
+        {
+            "model": "logistic_regression",
+            "accuracy@0.5": 0.9715,
+            "precision@0.5": 0.9454,
+            "recall@0.5": 0.9611,
+            "f1_score@0.5": 0.9532,
+            "roc_auc": 0.9959,
+            "calibrated_threshold": 0.29,
+            "recall_at_threshold": 0.9889,
+            "precision_at_threshold": 0.8558
+        },
+        {
+            "model": "naive_bayes",
+            "accuracy@0.5": 0.9799,
+            "precision@0.5": 0.9941,
+            "recall@0.5": 0.9389,
+            "f1_score@0.5": 0.9657,
+            "roc_auc": 0.9921,
+            "calibrated_threshold": 0.07,
+            "recall_at_threshold": 0.9889,
+            "precision_at_threshold": 0.7295
+        },
+        {
+            "model": "svm",
+            "accuracy@0.5": 0.9715,
+            "precision@0.5": 0.9454,
+            "recall@0.5": 0.9611,
+            "f1_score@0.5": 0.9532,
+            "roc_auc": 0.9975,
+            "calibrated_threshold": 0.06,
+            "recall_at_threshold": 0.9889,
+            "precision_at_threshold": 0.9128
+        }
+    ],
+    "best_model": "svm",
+    "decision_threshold": 0.06,
+    "recall_target": 0.99,
+    "meets_target": false,
+    "train_size": 4767,
+    "val_size": 596,
+    "test_size": 596
+}

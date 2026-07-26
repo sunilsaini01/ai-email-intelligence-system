@@ -58,7 +58,7 @@ def inspect_svm_weights(
     top_positive = np.argsort(weights)[-n_top:][::-1]
     top_negative = np.argsort(weights)[:n_top]
 
-    print(f"\nTop {n_top} SVM features → spam:")
+    print(f"\nTop {n_top} SVM features -> spam:")
 
     for idx in top_positive:
         print(
@@ -66,7 +66,7 @@ def inspect_svm_weights(
             f"weight: {weights[idx]:+.4f}"
         )
 
-    print(f"\nTop {n_top} SVM features → ham:")
+    print(f"\nTop {n_top} SVM features -> ham:")
 
     for idx in top_negative:
         print(

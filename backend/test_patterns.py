@@ -1,3 +1,7 @@
+import sys
+
+sys.stdout.reconfigure(encoding="utf-8")
+
 from app.feature_engineering.patterns import (
     URL_PATTERN,
     EMAIL_PATTERN,

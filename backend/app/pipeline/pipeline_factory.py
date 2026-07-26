@@ -1,66 +1,70 @@
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import MultinomialNB, ComplementNB
+from sklearn.svm import LinearSVC
+from sklearn.calibration import CalibratedClassifierCV
+
 from app.pipeline.pipeline_config import PipelineConfig
-
-from app.ml_models.logistic_regression_model import (
-    train_logistic_regression,
-)
-
-from app.ml_models.naive_bayes_model import (
-    train_naive_bayes,
-)
-
-from app.ml_models.svm_model import (
-    train_svm,
-)
 
 
 class PipelineFactory:
     """
-    Factory responsible for creating and training
-    machine learning models.
+    Factory responsible for creating machine learning models.
     """
 
     @staticmethod
     def create_model(
-        X_train,
-        y_train,
-        config: PipelineConfig,
+        X_train=None,
+        y_train=None,
+        config: PipelineConfig = None,
+        build_only: bool = False,
     ):
         """
-        Train and return the selected model.
+        Create a classifier.
+
+        When build_only=True:
+            Returns an untrained classifier.
+
+        When build_only=False:
+            (Reserved for future use.)
         """
 
         if config.model_type == "logistic_regression":
 
-            return train_logistic_regression(
-                X_train=X_train,
-                y_train=y_train,
+            return LogisticRegression(
                 C=config.lr_C,
                 penalty=config.lr_penalty,
+                solver="saga",
                 max_iter=config.lr_max_iter,
                 class_weight=config.class_weight,
+                random_state=config.random_state,
             )
 
         elif config.model_type == "naive_bayes":
 
-            return train_naive_bayes(
-                X_train=X_train,
-                y_train=y_train,
+            if config.nb_variant == "multinomial":
+                return MultinomialNB(
+                    alpha=config.nb_alpha,
+                )
+
+            return ComplementNB(
                 alpha=config.nb_alpha,
-                variant=config.nb_variant,
             )
 
         elif config.model_type == "svm":
 
-            return train_svm(
-                X_train=X_train,
-                y_train=y_train,
+            base_model = LinearSVC(
                 C=config.svm_C,
                 max_iter=config.svm_max_iter,
                 class_weight=config.class_weight,
+                random_state=config.random_state,
             )
 
-        else:
-
-            raise ValueError(
-                f"Unsupported model type: {config.model_type}"
+            return CalibratedClassifierCV(
+                estimator=base_model,
+                method="sigmoid",
+                cv=3,
             )
+
+        raise ValueError(
+            f"Unsupported model type: {config.model_type}"
+        )

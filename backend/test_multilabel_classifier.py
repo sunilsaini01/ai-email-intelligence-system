@@ -57,7 +57,7 @@ save_model(
     "backend/models/multilabel_classifier.pkl",
 )
 
-print("\n✅ Model saved successfully.")
+print("\n[OK] Model saved successfully.")
 
 # Load
 
@@ -65,7 +65,7 @@ loaded_model = load_model(
     "backend/models/multilabel_classifier.pkl",
 )
 
-print("✅ Model loaded successfully.")
+print("[OK] Model loaded successfully.")
 
 # Prediction
 

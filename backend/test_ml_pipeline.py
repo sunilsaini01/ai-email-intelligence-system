@@ -1,8 +1,5 @@
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 from app.pipeline.ml_pipeline import MLPipeline
 from app.pipeline.pipeline_config import PipelineConfig
-from app.pipeline.ml_pipeline import MLPipeline
 
 texts = [
     "free money click here",
@@ -14,10 +11,6 @@ texts = [
 ]
 
 labels = [1, 1, 0, 0, 1, 0]
-
-vectorizer = TfidfVectorizer()
-
-X = vectorizer.fit_transform(texts)
 
 models = [
     "logistic_regression",
@@ -37,17 +30,17 @@ for model_name in models:
 
     pipeline = MLPipeline(config)
     pipeline.fit(
-        X_train=X,
+        X_train=texts,
         y_train=labels,
     )
 
-    predictions = pipeline.predict(X)
+    predictions = pipeline.predict(texts)
 
     print("\nPredictions")
     print(predictions)
 
     try:
-        probabilities = pipeline.predict_proba(X)
+        probabilities = pipeline.predict_proba(texts)
 
         print("\nPrediction Probabilities")
         print(probabilities)

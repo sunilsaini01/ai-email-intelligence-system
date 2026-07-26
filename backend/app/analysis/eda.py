@@ -43,7 +43,7 @@ def plot_class_distribution(
         dpi=150
     )
 
-    plt.show()
+    plt.close(fig)
 
 
 def analyze_text_length(
@@ -81,7 +81,7 @@ def analyze_text_length(
         dpi=150
     )
 
-    plt.show()
+    plt.close()
 
 
 def analyze_nulls(

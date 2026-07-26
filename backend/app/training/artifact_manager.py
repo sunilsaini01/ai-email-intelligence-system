@@ -35,7 +35,7 @@ class ArtifactManager:
             path,
         )
 
-        print(f"\n✅ Model saved -> {path}")
+        print(f"\n[OK] Model saved -> {path}")
 
         return path
 
@@ -51,7 +51,7 @@ class ArtifactManager:
 
         model = joblib.load(path)
 
-        print(f"\n✅ Model loaded -> {path}")
+        print(f"\n[OK] Model loaded -> {path}")
 
         return model
 
@@ -78,6 +78,6 @@ class ArtifactManager:
                 indent=4,
             )
 
-        print(f"\n✅ JSON saved -> {path}")
+        print(f"\n[OK] JSON saved -> {path}")
 
         return path
