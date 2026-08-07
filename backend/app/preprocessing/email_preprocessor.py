@@ -172,3 +172,14 @@ SUMMARY_CONFIG = PreprocessingConfig(
     remove_stopwords=False,
     lemmatize=False,
 )
+
+# remove_stopwords=False (unlike SPAM_CONFIG) is deliberate: several priority
+# keyword phrases (app/feature_engineering/priority_keywords.py) contain
+# stopwords load-bearingly — "your manager", "still waiting", "before end of
+# day" — and stopword removal would strip exactly the words that make those
+# phrases identifiable, degrading the same keyword-matching signal the
+# feature extractor depends on.
+PRIORITY_CONFIG = PreprocessingConfig(
+    remove_stopwords=False,
+    lemmatize=True,
+)
