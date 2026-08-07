@@ -16,6 +16,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+from app.inference.classifier_backend import SpamClassifierBackend
 from app.inference.spam_predictor import SpamPredictor
 from app.preprocessing.email_preprocessor import SPAM_CONFIG, EmailPreprocessor
 
@@ -35,16 +36,27 @@ class SpamServiceUnavailable(RuntimeError):
 
 
 class SpamService:
-    def __init__(self, artifact_dir: str = _DEFAULT_ARTIFACT_DIR):
+    """
+    Depends on SpamClassifierBackend (a Protocol), not concretely on
+    SpamPredictor — see app/inference/classifier_backend.py. Swapping in a
+    transformer-based classifier later means passing a different `predictor`
+    here; `classify()` and the API layer above it don't change.
+    """
+
+    def __init__(
+        self,
+        artifact_dir: str = _DEFAULT_ARTIFACT_DIR,
+        predictor: SpamClassifierBackend | None = None,
+    ):
         model_path = Path(artifact_dir) / MODEL_FILENAME
 
-        if not model_path.exists():
+        if predictor is None and not model_path.exists():
             raise SpamServiceUnavailable(
                 f"No trained spam model found at {model_path}. "
                 "Run `python backend/scripts/train_spam_model.py` from the repo root first."
             )
 
-        self.predictor = SpamPredictor(MODEL_FILENAME, artifact_dir=artifact_dir)
+        self.predictor = predictor or SpamPredictor(MODEL_FILENAME, artifact_dir=artifact_dir)
         self.preprocessor = EmailPreprocessor(SPAM_CONFIG)
         self.threshold, self.model_version = self._load_threshold(artifact_dir)
 
@@ -55,16 +67,17 @@ class SpamService:
             return DEFAULT_THRESHOLD, "unknown"
 
         data = json.loads(metrics_path.read_text(encoding="utf-8"))
-        return float(data.get("decision_threshold", DEFAULT_THRESHOLD)), str(
-            data.get("best_model", "unknown")
-        )
+        # model_version is the versioned identifier (e.g. "svm-20260726"); best_model
+        # is kept as a fallback for metrics files written before versioning existed.
+        version = data.get("model_version") or data.get("best_model", "unknown")
+        return float(data.get("decision_threshold", DEFAULT_THRESHOLD)), str(version)
 
     def classify(self, subject: str, body: str) -> dict:
         cleaned = self.preprocessor.process(f"{subject} {body}".strip())
 
         result = self.predictor.predict({"body_clean": cleaned})
 
-        spam_score = result.probabilities.get("1", 0.0)
+        spam_score = result.probabilities.get(self.predictor.positive_label, 0.0)
         is_spam = spam_score >= self.threshold
 
         return {
