@@ -10,8 +10,9 @@ Why version at the router level (/api/v1/...) from day one:
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import health, spam
+from app.api.v1.endpoints import health, priority, spam
 
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(spam.router)
+api_router.include_router(priority.router)
