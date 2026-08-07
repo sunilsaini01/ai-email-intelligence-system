@@ -21,8 +21,17 @@ _DEFAULT_ARTIFACT_DIR = str(Path(__file__).resolve().parents[3] / "artifacts")
 
 
 class FeedbackLogger:
-    def __init__(self, artifact_dir: str = _DEFAULT_ARTIFACT_DIR):
-        self.path = Path(artifact_dir) / "spam_feedback.jsonl"
+    """
+    `module` defaults to "spam" so every existing caller (which never passed
+    it) is unaffected — see get_feedback_logger() below. Each module gets its
+    own JSONL file (`{module}_feedback.jsonl`) rather than one shared file,
+    so a corruption or growth issue in one module's feedback log can't affect
+    another's, and each stays a simple, independently-inspectable append log.
+    """
+
+    def __init__(self, artifact_dir: str = _DEFAULT_ARTIFACT_DIR, module: str = "spam"):
+        self.module = module
+        self.path = Path(artifact_dir) / f"{module}_feedback.jsonl"
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def log_correction(
@@ -37,7 +46,7 @@ class FeedbackLogger:
 
         record = {
             "feedback_id": feedback_id,
-            "module": "spam",
+            "module": self.module,
             "subject": subject,
             "body": body,
             "predicted_label": predicted_label,
@@ -54,3 +63,7 @@ class FeedbackLogger:
 
 def get_feedback_logger() -> FeedbackLogger:
     return FeedbackLogger()
+
+
+def get_priority_feedback_logger() -> FeedbackLogger:
+    return FeedbackLogger(module="priority")
