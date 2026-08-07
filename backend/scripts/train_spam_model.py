@@ -11,6 +11,7 @@ Produces:
 """
 
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +34,14 @@ logger = get_logger()
 RAW_DATA_DIR = "data/raw/spamassassin"
 MODEL_TYPES = ["logistic_regression", "naive_bayes", "svm"]
 RECALL_TARGET = 0.99
+
+# Overrides PipelineConfig's default "balanced" — see that field's docstring.
+# Derived empirically for THIS corpus by scripts/experiment_class_weight_tuning.py:
+# "balanced" (~1:2.3 here) caps SVM recall at 0.9889; 1:4 reaches 0.9944 at
+# *higher* precision (0.9133 vs 0.9128) — not a trade-off, a strict improvement.
+# Naive Bayes ignores class_weight entirely (sklearn's NB estimators don't
+# accept the parameter), so this only affects Logistic Regression and SVM.
+SPAM_CLASS_WEIGHT = {0: 1, 1: 4}
 
 
 def load_dataset() -> pd.DataFrame:
@@ -124,7 +133,7 @@ def train_and_evaluate(train_df, val_df, test_df):
     for model_type in MODEL_TYPES:
         logger.info("Training %s", model_type)
 
-        config = PipelineConfig(model_type=model_type, task="spam")
+        config = PipelineConfig(model_type=model_type, task="spam", class_weight=SPAM_CLASS_WEIGHT)
         trainer = Trainer(config)
         trainer.train(
             X_train=train_df["body_clean"].tolist(),
@@ -203,17 +212,39 @@ def main():
             "calibration. Consider class-weight tuning or a fine-tuned transformer model."
         )
 
+    # Version string identifies *this specific training run's* artifact — not a
+    # semantic "v1/v2" (that implies deliberate release management we don't have
+    # yet), just enough to answer "which run produced the model currently
+    # serving traffic" when someone is debugging a regression. A real model
+    # registry (MLflow, per the PRD) replaces this string with a proper
+    # registry entry later without changing where callers read it from.
+    model_version = f"{best_model_type}-{datetime.now(UTC):%Y%m%d-%H%M%S}"
+
     artifact_manager = ArtifactManager()
 
+    # Stable filename: this is the ONLY path SpamService ever loads from, so
+    # deploying a new model is "run training, restart the API" — no config
+    # change, no code change. Traceability comes from the versioned copy below
+    # and from `model_version` inside the metrics sidecar file.
     artifact_manager.save_model(
         trained[best_model_type].pipeline,
         "spam_baseline.joblib",
+    )
+
+    # Versioned copy for audit/rollback — every training run keeps its own
+    # artifact under artifacts/versions/, so "what did we serve on <date>" and
+    # "roll back to the previous model" are both just file operations.
+    versioned_artifact_manager = ArtifactManager(artifact_dir="artifacts/versions")
+    versioned_artifact_manager.save_model(
+        trained[best_model_type].pipeline,
+        f"spam_{model_version}.joblib",
     )
 
     artifact_manager.save_json(
         {
             "comparison": results,
             "best_model": best_model_type,
+            "model_version": model_version,
             "decision_threshold": float(best_row["calibrated_threshold"]),
             "recall_target": RECALL_TARGET,
             "meets_target": meets_target,
@@ -223,6 +254,9 @@ def main():
         },
         "spam_baseline_metrics.json",
     )
+
+    print(f"\nModel version: {model_version}")
+    print(f"Versioned artifact: artifacts/versions/spam_{model_version}.joblib")
 
 
 if __name__ == "__main__":
