@@ -15,6 +15,20 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-email_intelligence}
+    # If you have a native (non-Docker) Postgres already installed and
+    # running on this machine, it is very likely ALSO listening on host
+    # port 5432 — and on Windows in particular, both can end up bound
+    # simultaneously without Docker raising a "port already allocated"
+    # error, so `docker compose up` appears to succeed. When that happens,
+    # connections to localhost:5432 can silently land on the NATIVE
+    # Postgres instead of this container — you'll see confusing
+    # "password authentication failed" errors using these exact
+    # POSTGRES_USER/POSTGRES_PASSWORD values, because they're valid for
+    # THIS container, not your native install. (Discovered the hard way
+    # verifying the Phase 4 Alembic migrations — see
+    # docs/architecture_priority_classification.md "Performance".)
+    # If you hit this: change the mapping below to e.g. "5433:5432" and set
+    # POSTGRES_PORT=5433 in backend/.env to match.
     ports:
       - "5432:5432"
     volumes:
