@@ -13,9 +13,17 @@ class Trainer:
     def __init__(
         self,
         config: PipelineConfig,
+        pipeline_cls: type = MLPipeline,
     ):
+        """
+        `pipeline_cls` defaults to MLPipeline (spam's TF-IDF-only pipeline) —
+        existing callers are unaffected. Pass PriorityMLPipeline (or any
+        class implementing fit/predict/predict_proba/save/load) to reuse
+        this same Trainer for a pipeline that also needs engineered
+        features — see app/pipeline/priority_pipeline.py.
+        """
         self.config = config
-        self.pipeline = MLPipeline(config)
+        self.pipeline = pipeline_cls(config)
 
     def train(
         self,
