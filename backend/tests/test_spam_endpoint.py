@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from app.services.feedback_service import FeedbackLogger, get_feedback_logger
 from app.services.spam_service import _DEFAULT_ARTIFACT_DIR, get_spam_service
 
 
@@ -71,19 +72,33 @@ def test_predict_requires_body(client):
     assert response.status_code == 422
 
 
-def test_feedback_is_logged(client):
-    response = client.post(
-        "/api/v1/spam/feedback",
-        json={
-            "subject": "Test",
-            "body": "Test body",
-            "predicted_label": "ham",
-            "corrected_label": "spam",
-            "comment": "test correction",
-        },
+def test_feedback_is_logged(client, tmp_path):
+    # Without this override, FeedbackLogger's default writes to the real
+    # artifacts/spam_feedback.jsonl — every test run was appending a row to a
+    # file that gets committed to the repo. tmp_path isolates it the same way
+    # test_spam_prediction_log.py isolates the DB write with an in-memory
+    # SQLite session, instead of hitting a real dependency.
+    client.app.dependency_overrides[get_feedback_logger] = lambda: FeedbackLogger(
+        artifact_dir=str(tmp_path)
     )
-    assert response.status_code == 200
+    try:
+        response = client.post(
+            "/api/v1/spam/feedback",
+            json={
+                "subject": "Test",
+                "body": "Test body",
+                "predicted_label": "ham",
+                "corrected_label": "spam",
+                "comment": "test correction",
+            },
+        )
+        assert response.status_code == 200
 
-    body = response.json()
-    assert body["status"] == "logged"
-    assert body["feedback_id"]
+        body = response.json()
+        assert body["status"] == "logged"
+        assert body["feedback_id"]
+
+        logged = (tmp_path / "spam_feedback.jsonl").read_text(encoding="utf-8")
+        assert body["feedback_id"] in logged
+    finally:
+        del client.app.dependency_overrides[get_feedback_logger]
