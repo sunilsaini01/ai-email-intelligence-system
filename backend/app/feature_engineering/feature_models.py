@@ -59,6 +59,14 @@ class ContentFeatures:
     spam_keyword_ratio: float
 
     # -----------------------
+    # Priority Signals (Module 3 / FR-17)
+    # -----------------------
+
+    urgency_keyword_count: int
+    escalation_keyword_count: int
+    sla_keyword_count: int
+
+    # -----------------------
     # Email Metadata
     # -----------------------
 
