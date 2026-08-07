@@ -4,5 +4,6 @@ pydantic==2.7.4
 pydantic-settings==2.3.4
 sqlalchemy==2.0.31
 asyncpg==0.29.0
+alembic==1.18.4
 python-json-logger==2.0.7
 python-dotenv==1.0.1
