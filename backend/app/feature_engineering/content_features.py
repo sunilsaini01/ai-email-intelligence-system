@@ -9,6 +9,11 @@ from app.feature_engineering.patterns import (
     CURRENCY_PATTERN,
     SENTENCE_PATTERN,
 )
+from app.feature_engineering.priority_keywords import (
+    ESCALATION_KEYWORDS,
+    SLA_KEYWORDS,
+    URGENCY_KEYWORDS,
+)
 from app.feature_engineering.spam_keywords import SPAM_KEYWORDS
 
 
@@ -142,7 +147,27 @@ class ContentFeatureExtractor:
             if len(SPAM_KEYWORDS) > 0
             else 0.0
         )
-        
+
+        # Priority Features (Module 3 / FR-17)
+
+        urgency_keyword_count = sum(
+            1
+            for keyword in URGENCY_KEYWORDS
+            if keyword in body_lower
+        )
+
+        escalation_keyword_count = sum(
+            1
+            for keyword in ESCALATION_KEYWORDS
+            if keyword in body_lower
+        )
+
+        sla_keyword_count = sum(
+            1
+            for keyword in SLA_KEYWORDS
+            if keyword in body_lower
+        )
+
         # Subject Features
 
         subject_words = subject.split()
@@ -200,6 +225,11 @@ class ContentFeatureExtractor:
             # Spam
             spam_keyword_count=spam_keyword_count,
             spam_keyword_ratio=round(spam_keyword_ratio, 4),
+
+            # Priority
+            urgency_keyword_count=urgency_keyword_count,
+            escalation_keyword_count=escalation_keyword_count,
+            sla_keyword_count=sla_keyword_count,
 
             is_reply=is_reply,
 
