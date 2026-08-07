@@ -17,10 +17,19 @@ def evaluate_model(
     model: Any,
     X_test,
     y_test,
+    average: str = "binary",
 ) -> dict:
     """
     Evaluate a trained classification model and return
     the most common performance metrics.
+
+    `average="binary"` (default) preserves exact original behavior for
+    existing (spam) callers. Pass average="macro" for multiclass tasks
+    (priority: Critical/High/Medium/Low) — macro treats every class equally
+    regardless of frequency, which matters here because Critical is the
+    rarest class and also the operationally most important one; a
+    frequency-weighted average would let it be dominated by Low/Medium
+    performance (see docs/model_cards/priority_classification.md).
     """
 
     predictions = model.predict(X_test)
@@ -33,19 +42,19 @@ def evaluate_model(
         "precision": precision_score(
             y_test,
             predictions,
-            average="binary",
+            average=average,
             zero_division=0,
         ),
         "recall": recall_score(
             y_test,
             predictions,
-            average="binary",
+            average=average,
             zero_division=0,
         ),
         "f1_score": f1_score(
             y_test,
             predictions,
-            average="binary",
+            average=average,
             zero_division=0,
         ),
         "confusion_matrix": confusion_matrix(
@@ -62,12 +71,25 @@ def evaluate_model(
     # ROC-AUC requires probability estimates.
     if hasattr(model, "predict_proba"):
 
-        probabilities = model.predict_proba(X_test)[:, 1]
+        probabilities = model.predict_proba(X_test)
 
-        results["roc_auc"] = roc_auc_score(
-            y_test,
-            probabilities,
-        )
+        try:
+            if average == "binary":
+                results["roc_auc"] = roc_auc_score(
+                    y_test,
+                    probabilities[:, 1],
+                )
+            else:
+                results["roc_auc"] = roc_auc_score(
+                    y_test,
+                    probabilities,
+                    multi_class="ovr",
+                    average=average if average in ("macro", "weighted") else "macro",
+                )
+        except ValueError:
+            # e.g. a class absent from a small val/test split — don't let a
+            # missing-class edge case crash the whole comparison run.
+            pass
 
     return results
 
