@@ -1,0 +1,6 @@
+outs:
+- md5: 399f78aea384229fa2280dbe4b45625e.dir
+  size: 11212655
+  nfiles: 4
+  hash: md5
+  path: priority_synthetic_v1
