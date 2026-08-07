@@ -31,7 +31,14 @@ class PipelineConfig:
     model_save_path: str = "saved_model.joblib"
 
     # General ML Configuration
-    class_weight: str = "balanced"
+    #
+    # Default is the sensible general-purpose choice for a task with unknown
+    # class balance (future priority/category/sentiment/intent tasks). Spam
+    # specifically overrides this — see scripts/train_spam_model.py — because
+    # its optimal ratio was derived empirically from its own corpus, and
+    # baking a spam-tuned constant in here would silently leak into whatever
+    # task builds a PipelineConfig next without one.
+    class_weight: str | dict = "balanced"
     random_state: int = 42
 
     # Model Selection
