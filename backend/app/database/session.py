@@ -47,6 +47,21 @@ class Base(DeclarativeBase):
     pass
 
 
+# Bounds how long an endpoint's best-effort audit-log write (spam/priority
+# prediction repositories) is allowed to block a response. Discovered as a
+# real gap, not designed in from the start: a *raised* DB exception (e.g.
+# auth failure) was already caught by the endpoints' try/except and didn't
+# block the response — but a *hanging* connection attempt (observed against
+# a local Postgres with what appears to be an IPv6 routing issue) has no
+# exception to catch, so the request hung indefinitely instead of failing
+# fast. Wrap any such best-effort write in
+# `asyncio.wait_for(..., timeout=DB_WRITE_TIMEOUT_SECONDS)` — 3s is generous
+# for a local network write (predictions themselves complete in
+# single-digit ms) while still bounding the worst case to something a
+# caller can reasonably wait out.
+DB_WRITE_TIMEOUT_SECONDS = 3.0
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI dependency. Yields a session scoped to a single request,
