@@ -78,3 +78,11 @@ with no Postgres running, `/health` still returns `200 ok` while
 - No CI pipeline yet (GitHub Actions comes with the first real feature, so
   there's something worth gating).
 - `SECRET_KEY` is a placeholder — must be replaced before any non-local use.
+
+## Module Architecture Docs (added as each module landed)
+
+This file stays the Phase 1 foundation record; each ML module gets its own
+architecture doc rather than growing this one indefinitely:
+
+- [`architecture_spam_detection.md`](architecture_spam_detection.md) — Phase 3, spam detection (the `services/` extraction seam described above, exercised for the first time).
+- [`architecture_priority_classification.md`](architecture_priority_classification.md) — Phase 4, priority classification. **Read [`data_audit_priority.md`](data_audit_priority.md) first** — this module's data status (synthetic, not PRD-compliant) gates how every metric in it should be read.
