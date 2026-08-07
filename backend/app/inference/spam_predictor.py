@@ -12,6 +12,12 @@ class SpamPredictor:
     for all incoming prediction requests.
     """
 
+    # Matches app/inference/classifier_backend.py's SpamClassifierBackend contract.
+    # "1" specifically because scripts/train_spam_model.py encodes spam=1, ham=0
+    # (df["label"] = (df["spam_label"] == "spam").astype(int)) — not a general
+    # property of sklearn classifiers, a fact about how THIS model was trained.
+    positive_label = "1"
+
     def __init__(self, model_path: str, artifact_dir: str = "artifacts"):
         artifact_manager = ArtifactManager(artifact_dir=artifact_dir)
 
