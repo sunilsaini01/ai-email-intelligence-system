@@ -171,6 +171,20 @@ SUMMARY_CONFIG = PreprocessingConfig(
     lowercase=False,
     remove_stopwords=False,
     lemmatize=False,
+    # Found via Phase 6 testing (tests/test_summarization_security.py),
+    # not assumed: PreprocessingConfig's default `min_token_length=2`
+    # silently drops every single-character token during the
+    # tokenize-filter-rejoin pass -- "I", "a", and every single digit
+    # (0-9). That's an acceptable, even desirable, signal-cleaning step
+    # for a bag-of-words classifier (spam/priority/category all keep the
+    # default), but actively harmful for summarization: "I will pay you
+    # $5 for the 3 items" becomes "will pay you $5 for the items" -- a
+    # dropped subject pronoun and, worse for FR-26, a silently vanished
+    # quantity. A summarizer's job is to hand back readable, faithful
+    # prose, not a token bag, so this task-specific config disables the
+    # filter entirely rather than inheriting a default tuned for a
+    # different kind of task.
+    min_token_length=1,
 )
 
 # remove_stopwords=False (unlike SPAM_CONFIG) is deliberate: several priority
