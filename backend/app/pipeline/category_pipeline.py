@@ -37,6 +37,7 @@ from app.feature_engineering.category_keywords import CATEGORY_LABELS
 from app.feature_engineering.content_features import ContentFeatureExtractor
 from app.feature_engineering.feature_matrix import build_feature_matrix
 from app.feature_engineering.feature_scaler import EngineeredFeatureScaler
+from app.feature_engineering.feature_schema import FeatureSchema
 from app.feature_engineering.metadata_features import MetadataFeatureExtractor
 from app.pipeline.pipeline_config import PipelineConfig
 from app.pipeline.pipeline_factory import PipelineFactory
@@ -112,8 +113,19 @@ class CategoryMLPipeline:
         self.mlb = MultiLabelBinarizer(classes=list(CATEGORY_LABELS))
         self.classifier: OneVsRestClassifier | None = None
         self.classes_ = None
+        # Phase 6 Gate 1 (cross-module hardening) — see
+        # app/feature_engineering/feature_schema.py's module docstring for
+        # why this exists (the Phase 5 incident that broke priority's
+        # artifact) and app/pipeline/priority_pipeline.py for the identical
+        # mechanism there.
+        self.feature_schema: FeatureSchema | None = None
 
     def _vectorize(self, records: list[dict], fit: bool):
+        if not fit:
+            stored_schema = getattr(self, "feature_schema", None)
+            if stored_schema is not None:
+                stored_schema.validate_compatible_with(FeatureSchema.current())
+
         texts = [r.get("body_clean", "") for r in records]
         if fit:
             self.tfidf = TfidfVectorizer(
@@ -148,6 +160,7 @@ class CategoryMLPipeline:
         PriorityMLPipeline.fit's y_train.
         """
         matrix = self._vectorize(X_train, fit=True)
+        self.feature_schema = FeatureSchema.current()
         y_binary = self.mlb.fit_transform(y_train)
 
         base_estimator = PipelineFactory.create_model(config=self.config, build_only=True)

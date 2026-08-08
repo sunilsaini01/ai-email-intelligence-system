@@ -130,3 +130,27 @@ def test_classes_match_full_taxonomy(trained_pipeline):
     model always has all 8 slots, even if a training batch happens not to
     contain every label (a real risk with small/skewed batches)."""
     assert list(trained_pipeline.classes_) == list(CATEGORY_LABELS)
+
+
+def test_incompatible_feature_schema_is_rejected_explicitly(trained_pipeline):
+    """Phase 6 Gate 1 regression test — same mechanism and same rationale
+    as test_priority_pipeline.py's equivalent test; see
+    app/feature_engineering/feature_schema.py's module docstring."""
+    from app.feature_engineering.feature_schema import FeatureSchema, FeatureSchemaMismatchError
+
+    stale_schema = FeatureSchema(
+        feature_names=("some_field_that_no_longer_exists",),
+        feature_count=1,
+        fingerprint="0000deadbeef",
+    )
+    trained_pipeline.feature_schema = stale_schema
+
+    with pytest.raises(FeatureSchemaMismatchError):
+        trained_pipeline.predict(TRAIN_RECORDS)
+
+
+def test_missing_feature_schema_attribute_does_not_crash(trained_pipeline):
+    """A pre-Gate-1 pickled artifact won't have a `feature_schema`
+    attribute at all — predict() must still work for legacy artifacts."""
+    del trained_pipeline.feature_schema
+    trained_pipeline.predict(TRAIN_RECORDS)  # must not raise

@@ -24,6 +24,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from app.feature_engineering.content_features import ContentFeatureExtractor
 from app.feature_engineering.feature_matrix import build_feature_matrix
 from app.feature_engineering.feature_scaler import EngineeredFeatureScaler
+from app.feature_engineering.feature_schema import FeatureSchema
 from app.feature_engineering.metadata_features import MetadataFeatureExtractor
 from app.pipeline.pipeline_config import PipelineConfig
 from app.pipeline.pipeline_factory import PipelineFactory
@@ -106,8 +107,20 @@ class PriorityMLPipeline:
         self.scaler = EngineeredFeatureScaler() if self._use_scaling else None
         self.classifier = None
         self.classes_ = None
+        # Phase 6 Gate 1 (cross-module hardening): fingerprint of the exact
+        # engineered-feature schema this pipeline was fit against. None
+        # until fit() runs; also None on artifacts pickled before this
+        # attribute existed (getattr-guarded below) — a legacy artifact
+        # skips validation rather than crashing on a missing attribute, but
+        # gets a real fingerprint the next time it's retrained.
+        self.feature_schema: FeatureSchema | None = None
 
     def _vectorize(self, records: list[dict], fit: bool):
+        if not fit:
+            stored_schema = getattr(self, "feature_schema", None)
+            if stored_schema is not None:
+                stored_schema.validate_compatible_with(FeatureSchema.current())
+
         texts = [r.get("body_clean", "") for r in records]
         if fit:
             self.tfidf = TfidfVectorizer(
@@ -137,6 +150,7 @@ class PriorityMLPipeline:
 
     def fit(self, X_train: list[dict], y_train: list[str]):
         matrix = self._vectorize(X_train, fit=True)
+        self.feature_schema = FeatureSchema.current()
 
         self.classifier = PipelineFactory.create_model(config=self.config, build_only=True)
         self.classifier.fit(matrix, y_train)

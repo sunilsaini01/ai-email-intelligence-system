@@ -117,3 +117,35 @@ def test_logistic_regression_path_does_scale_engineered_features():
     config = PipelineConfig(model_type="logistic_regression", task="priority")
     pipeline = PriorityMLPipeline(config)
     assert pipeline.scaler is not None
+
+
+def test_incompatible_feature_schema_is_rejected_explicitly(trained_pipeline):
+    """
+    Phase 6 Gate 1 regression test — directly reproduces the Phase 5
+    incident class (a stored schema that no longer matches the installed
+    ContentFeatures/MetadataFeatures code) and confirms it now fails with a
+    clear FeatureSchemaMismatchError instead of a cryptic sklearn
+    dimension-mismatch error several call frames down.
+    """
+    from app.feature_engineering.feature_schema import FeatureSchema, FeatureSchemaMismatchError
+
+    stale_schema = FeatureSchema(
+        feature_names=("some_field_that_no_longer_exists",),
+        feature_count=1,
+        fingerprint="0000deadbeef",
+    )
+    trained_pipeline.feature_schema = stale_schema
+
+    with pytest.raises(FeatureSchemaMismatchError):
+        trained_pipeline.predict(TRAIN_RECORDS)
+
+
+def test_missing_feature_schema_attribute_does_not_crash(trained_pipeline):
+    """
+    A pre-Gate-1 pickled artifact won't have a `feature_schema` attribute
+    at all (not None — genuinely absent). predict() must still work rather
+    than raising AttributeError, so legacy artifacts keep functioning until
+    their next retrain (which will populate the attribute going forward).
+    """
+    del trained_pipeline.feature_schema
+    trained_pipeline.predict(TRAIN_RECORDS)  # must not raise
