@@ -68,6 +68,48 @@ class FeedbackLogger:
 
         return feedback_id
 
+    def log_summary_feedback(
+        self,
+        original_text: str,
+        generated_summary: str,
+        accepted: bool,
+        corrected_summary: str | None = None,
+        quality_score: int | None = None,
+        reason: str | None = None,
+    ) -> str:
+        """
+        Summarization's feedback shape (accept/reject + optional correction
+        + a 1-5 quality score) doesn't fit log_correction's predicted/
+        corrected-label shape (built for swapping one discrete label for
+        another, not a generation task with a graded quality judgment) — a
+        parallel method, not a forced fit, writing to the same per-module
+        JSONL file.
+
+        Per this phase's Step 17: this ONLY records feedback — nothing in
+        this codebase auto-retrains from a feedback file. Promoting
+        corrected summaries into a future training set would be a
+        separate, explicit, validated step, same stance already implicit
+        for every other module's feedback path.
+        """
+        feedback_id = str(uuid.uuid4())
+
+        record = {
+            "feedback_id": feedback_id,
+            "module": self.module,
+            "original_text": original_text,
+            "generated_summary": generated_summary,
+            "accepted": accepted,
+            "corrected_summary": corrected_summary,
+            "quality_score": quality_score,
+            "reason": reason,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+
+        return feedback_id
+
 
 def get_feedback_logger() -> FeedbackLogger:
     return FeedbackLogger()
@@ -79,3 +121,7 @@ def get_priority_feedback_logger() -> FeedbackLogger:
 
 def get_category_feedback_logger() -> FeedbackLogger:
     return FeedbackLogger(module="category")
+
+
+def get_summarization_feedback_logger() -> FeedbackLogger:
+    return FeedbackLogger(module="summarization")
