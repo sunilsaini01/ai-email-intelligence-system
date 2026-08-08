@@ -164,7 +164,7 @@
         }
     ],
     "best_model": "logistic_regression",
-    "model_version": "logistic_regression-20260808-132312",
+    "model_version": "logistic_regression-20260808-160846",
     "labels": [
         "Low",
         "Medium",

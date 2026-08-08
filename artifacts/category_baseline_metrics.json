@@ -62,7 +62,7 @@
         }
     ],
     "best_model": "svm",
-    "model_version": "svm-20260808-131201",
+    "model_version": "svm-20260808-161540",
     "labels": [
         "Support",
         "Sales",
