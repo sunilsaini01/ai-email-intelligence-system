@@ -169,4 +169,28 @@ REGISTRY: dict[str, DatasetEntry] = {
         ],
         preprocessing_script="backend/scripts/generate_synthetic_category_dataset.py",
     ),
+
+    "summarization_bbc_v1": DatasetEntry(
+        name="BBC News Summary (email-summarization evaluation proxy)",
+        version="v1",
+        source_url="http://mlg.ucd.ie/datasets/bbc.html",
+        local_path="data/processed/summarization_bbc_v1/",
+        license="Research/academic use (standard for this widely-used benchmark)",
+        size_approx="2,127 unique article/summary pairs (98 duplicates removed from 2,225 raw)",
+        tasks=["email_summarization"],
+        domain_match="low",
+        trust_level="supplementary",
+        known_issues=[
+            "News articles, not email — no sender/subject/thread/signature/quoted-reply structure. "
+            "See docs/data_audit_summarization.md for the full disclosure.",
+            "Summaries ARE genuinely human-written (not fabricated) — this is NOT the same class of "
+            "limitation as priority_synthetic_v1/category_synthetic_v1's heuristic labels. Supports "
+            "real model-quality comparison; does not support PRD-compliance claims for FR-25/26/27.",
+            "Reference summary length (median 142 words) is far longer than FR-25's 2-3-sentence "
+            "target — a format mismatch independent of the domain mismatch.",
+            "Physically stored at a misleadingly-named path (data/raw/cnn_dailymail/BBC News Summary/) "
+            "left over from an abandoned CNN/DailyMail download attempt — see data audit §2.",
+        ],
+        preprocessing_script="backend/scripts/prepare_summarization_dataset.py",
+    ),
 }
