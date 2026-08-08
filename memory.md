@@ -1,23 +1,60 @@
 # Project Memory — AI Email Intelligence System
 
 Catalog of every source/doc file's current status, for fast orientation in a
-future session without re-reading everything. Generated 2026-08-08.
+future session without re-reading everything. Generated 2026-08-08, updated
+2026-08-09 (Phase 7A), updated 2026-08-09 (Phase 7B).
 
 ## Project Status Snapshot
 
-Phase 6 of 15 (PRD numbering) is complete: Spam Detection, Priority
-Classification, Email Categorization, and Email Summarization are all
-implemented as a FastAPI modular monolith with served `/api/v1/*` endpoints,
-DB-backed audit logging, and human-feedback endpoints. Phases 7-15
-(Sentiment/Intent, Routing, RAG, Auto-Reply, Dashboard, CI/CD, Cloud, MLOps)
-are not started. **Spam** is the only module with real, PRD-relevant
-evidence (99.44% recall / 91.33% precision on held-out SpamAssassin data).
-**Priority and Categorization** are trained on heuristically-labelled
-*synthetic* data (real Enron text, fabricated labels via keyword heuristics)
-— explicitly not PRD-compliant until real annotation happens (see
-`docs/data_audit_priority.md`, `docs/data_audit_categorization.md`).
-**Summarization** is evaluated on real, human-written but *off-domain* (BBC
-News, not email) reference summaries (see `docs/data_audit_summarization.md`).
+Phase 7B of 15 (PRD numbering) is complete: Spam Detection, Priority
+Classification, Email Categorization, Email Summarization, Sentiment
+Analysis, and Intent Detection are all implemented as a FastAPI modular
+monolith with served `/api/v1/*` endpoints, DB-backed audit logging, and
+human-feedback endpoints. Phases 8-15 (Routing, RAG, Auto-Reply, Dashboard,
+CI/CD, Cloud, MLOps) are not started. **Spam** is the only module with
+real, PRD-relevant evidence (99.44% recall / 91.33% precision on held-out
+SpamAssassin data). **Priority, Categorization, and Intent** are trained on
+heuristically-labelled *synthetic* data (real Enron text, fabricated
+labels via keyword heuristics) — explicitly not PRD-compliant until real
+annotation happens (see `docs/data_audit_priority.md`,
+`docs/data_audit_categorization.md`, `docs/data_audit_intent.md`).
+**Summarization** is evaluated on real, human-written but *off-domain*
+(BBC News, not email) reference summaries (see
+`docs/data_audit_summarization.md`). **Sentiment** has the weakest
+evidentiary footing of all six: the served model (`VaderSentimentPredictor`)
+is a zero-shot lexicon scorer never trained or fit to any dataset — no
+ground truth exists to measure it against, on any domain (see
+`docs/data_audit_sentiment.md`). A trained comparison classifier was built
+(`train_sentiment_model.py`) but deliberately NOT served, because it's
+trained on VADER's own pseudo-labels and can only ever imitate VADER
+(measured: 0.33 macro F1 vs. its own label source — see
+`docs/model_cards/sentiment.md`). FR-30 (emotion), FR-31 (feed into
+priority score), FR-32 (sender trend tracking) are explicitly deferred,
+not implemented — see `docs/data_audit_sentiment.md` §1.
+
+**Intent Detection** (Phase 7B) is multi-label (FR-34, confirmed directly
+from the PRD's own "Complaint + Refund" example) and trained on
+`intent_synthetic_v1` (Enron + 9-class keyword-heuristic bootstrap,
+`intent_keywords.py`, mirroring priority/category's pattern — NOT
+sentiment's zero-shot resolution, since no off-the-shelf intent scorer
+exists). `IntentMLPipeline` is deliberately TF-IDF-only (no shared
+`ContentFeatures`/`MetadataFeatures` coupling, avoiding a third module
+joining Phase 5's shared-artifact fragility). Also implements FR-35 entity
+extraction (order IDs, dates, amounts, names, product names) by reusing
+`summary_grounding.extract_entities()` plus a new `ORDER_ID_PATTERN`
+regex. **Found a real bug via its own test suite**: the order-ID regex
+initially matched "to" in "in order to proceed" as a false-positive order
+ID — fixed by requiring a digit in the captured token (see
+`app/feature_engineering/patterns.py`). **Found and root-caused a specific
+model reliability failure** (not just "unvalidated"): the Escalation class
+(4.41% prevalence, rarest-but-one) fires on unrelated text AND fails to
+fire on its own target case — see `docs/error_analysis_intent.md` and
+`docs/model_cards/intent.md`. Refund's F1 was 0.0 on the test set — never
+correctly predicted once. FR-36 (feed into routing/auto-reply) is
+explicitly deferred, and the Sentiment↔Intent independence boundary (no
+shared encoder, no `sentiment → intent` dependency) is explicitly
+maintained per Phase 7A's own precedent.
+
 The single known-unresolved engineering item is
 `docs/technical_debt/database_write_hang.md`: a real, reproduced DB-write
 hang under the live Windows/Uvicorn request path (connects but never
@@ -30,6 +67,15 @@ assertion-free smoke-test scripts run manually during early development, not
 part of the pytest suite — see the "backend/ (root-level test_*.py)" section
 below.
 
+**Phase 7A also fixed a real pre-existing bug**: `app/models/__init__.py`
+was missing `CategoryPredictionLog`/`SummaryLog` (added Phases 5/6, never
+registered for Alembic `Base.metadata` discovery) — fixed alongside adding
+`SentimentPredictionLog`; verified against a real disposable Postgres 16
+Docker container (`alembic upgrade head` from clean, all 5 tables
+correct), not just SQLite. Regression test:
+`tests/test_model_metadata_registration.py`. Test suite: 180 passed, 1
+skipped (up from 152; +28 sentiment tests, zero regressions).
+
 ---
 
 ## backend/app/api/
@@ -40,6 +86,8 @@ below.
 - `v1/endpoints/priority.py` — `/priority/predict` + `/priority/feedback`; mirrors spam.py's pattern exactly.
 - `v1/endpoints/category.py` — `/categorization/predict` + `/categorization/feedback`; mirrors priority.py, multi-label response shape.
 - `v1/endpoints/summarization.py` — `/summarization/predict` + `/summarization/feedback`; no 503/unavailable path (nothing pre-trained is required for the default extractive path).
+- `v1/endpoints/sentiment.py` — `/sentiment/predict` + `/sentiment/feedback` (Phase 7A); no 503 path (VaderSentimentPredictor needs no artifact); mirrors priority.py's shape otherwise.
+- `v1/endpoints/intent.py` — `/intent/predict` + `/intent/feedback` (Phase 7B); HAS a 503 path (unlike sentiment — trained artifact dependency, mirrors category.py); response includes FR-35 entities alongside intents.
 - `__init__.py` files (api/, api/v1/, api/v1/endpoints/) — empty, package markers only.
 
 ## backend/app/core/
@@ -74,6 +122,8 @@ below.
 - `repositories/priority_prediction_repository.py` — writes `PriorityPredictionLog` rows.
 - `repositories/category_prediction_repository.py` — writes `CategoryPredictionLog` rows (JSON columns for multi-label).
 - `repositories/summary_repository.py` — writes `SummaryLog` rows (no source body/subject stored, by design).
+- `repositories/sentiment_repository.py` — writes `SentimentPredictionLog` rows (Phase 7A).
+- `repositories/intent_prediction_repository.py` — writes `IntentPredictionLog` rows including `entities` (Phase 7B).
 - `__init__.py`, `repositories/__init__.py` — empty.
 
 ## backend/app/evaluation/
@@ -92,8 +142,9 @@ below.
 - `feature_pipeline.py` — `build_tfidf_features()` / `build_metadata_features()` — older/simpler TF-IDF + metadata builder helpers (train/val split fitting).
 - `feature_scaler.py` — `EngineeredFeatureScaler` wraps `StandardScaler`, fit-on-train-only discipline.
 - `feature_schema.py` — `FeatureSchema`/`FeatureSchemaMismatchError` (Phase 6 Gate 1): fingerprints the ordered engineered-feature-name list a pipeline was fit against; fails loudly at predict time on mismatch instead of a cryptic sklearn shape error. Added after a real Phase 5 incident broke priority's artifact.
-- `patterns.py` — compiled regexes: `URL_PATTERN`, `EMAIL_PATTERN`, `PHONE_PATTERN`, `CURRENCY_PATTERN`, `SENTENCE_PATTERN`, `DATE_PATTERN`.
+- `patterns.py` — compiled regexes: `URL_PATTERN`, `EMAIL_PATTERN`, `PHONE_PATTERN`, `CURRENCY_PATTERN`, `SENTENCE_PATTERN`, `DATE_PATTERN`, `ORDER_ID_PATTERN` (Phase 7B, FR-35; requires an "order" cue word + a digit in the captured token — the digit requirement was added after testing caught a false positive on "in order to proceed").
 - `category_keywords.py` — per-category (8 FR-21 labels) keyword frozensets; also drives the synthetic category-label generator (documented leakage channel).
+- `intent_keywords.py` — per-intent (9 FR-33 labels) keyword frozensets (Phase 7B); drives ONLY the synthetic label generator, deliberately NOT a `ContentFeatures` field (unlike category_keywords.py) — no model-feature leakage channel for this module, see `docs/data_audit_intent.md` §5. No default/fallback label set (intent has no "General" equivalent).
 - `priority_keywords.py` — `URGENCY_KEYWORDS`/`ESCALATION_KEYWORDS`/`SLA_KEYWORDS` frozensets; also drives the synthetic priority-label generator.
 - `spam_keywords.py` — `SPAM_KEYWORDS` frozenset of trigger words.
 - `domains.py` — `FREEMAIL_DOMAINS` and `INTERNAL_DOMAINS` (populated with `enron.com` for the Phase 4 synthetic dataset's sender domain).
@@ -108,6 +159,10 @@ below.
 - `spam_predictor.py` — `SpamPredictor`: loads trained sklearn pipeline via `ArtifactManager`, wraps `predict_proba`; `positive_label = "1"`.
 - `priority_predictor.py` — `PriorityPredictor`: loads `PriorityMLPipeline`, takes record dicts (not raw text) due to metadata features.
 - `category_predictor.py` — `CategoryPredictor`: loads `CategoryMLPipeline`, returns independent per-label probabilities (not softmax).
+- `sentiment_classifier_backend.py` — `SentimentClassifierBackend` Protocol (Phase 7A); narrower than priority's (just `predict(text: str)`, no metadata fields — VADER is a pure text scorer).
+- `sentiment_predictor.py` — `VaderSentimentPredictor`: wraps `vaderSentiment`'s `SentimentIntensityAnalyzer`, no artifact loading (nothing trained). `bucket_compound()` maps VADER's compound score to FR-29's 5-class taxonomy via disclosed heuristic thresholds (±0.05/±0.6). `_pseudo_distribution()` derives a heuristic (not calibrated) confidence/probability spread across ordinally-adjacent labels only.
+- `intent_classifier_backend.py` — `IntentClassifierBackend` Protocol (Phase 7B); takes plain `text` like sentiment's, not a record dict like category's (TF-IDF-only, no metadata features).
+- `intent_predictor.py` — `IntentPredictor`: loads trained `IntentMLPipeline` via `ArtifactManager`; returns `MultiLabelPredictionResult` (reused from category); may return an empty label list (no "General"-style fallback exists for intent).
 - `__init__.py` — empty.
 
 ## backend/app/middleware/
@@ -130,14 +185,17 @@ below.
 - `priority_prediction_log.py` — `PriorityPredictionLog` table; same subject/body-inline pattern as spam.
 - `category_prediction_log.py` — `CategoryPredictionLog` table; uses generic `JSON` (not `JSONB`) for `predicted_categories`/`confidences` so SQLite-backed tests work.
 - `summary_log.py` — `SummaryLog` table; deliberately does NOT store source body/subject (Step 16 privacy decision) — only the produced summary + metadata.
-- `__init__.py` — imports `PriorityPredictionLog`/`SpamPredictionLog` into `Base.metadata` for Alembic autogenerate visibility. **Note: `CategoryPredictionLog` and `SummaryLog` are NOT imported here** — a latent gap (migrations are hand-written so it hasn't bitten yet, but any future `Base.metadata.create_all()`/autogenerate use would miss those two tables).
+- `sentiment_prediction_log.py` — `SentimentPredictionLog` table (Phase 7A); stores subject/body directly (same pattern as spam/priority/category, unlike SummaryLog).
+- `intent_prediction_log.py` — `IntentPredictionLog` table (Phase 7B); THREE JSON columns (predicted_intents, confidences, entities) — the `entities` column is new, no other module's log table has one.
+- `__init__.py` — imports all six models now (fixed in Phase 7A for Category/Summary; `IntentPredictionLog` added correctly in Phase 7B from the start). Verified against a real disposable Postgres 16 container both times. Regression test: `tests/test_model_metadata_registration.py`.
 
 ## backend/app/nlp/ (generation, not classification — Phase 6)
 
 - `extractive_summarizer.py` — `ExtractiveSummarizer`: TextRank (TF-IDF sentence-similarity graph + `networkx` PageRank), default summarization path, sub-100ms.
 - `abstractive_summarizer.py` — `AbstractiveSummarizer`: off-the-shelf `sshleifer/distilbart-cnn-6-6` (not fine-tuned), lazy-loaded (`lru_cache`), ~115s cold load, ~3s warm inference.
 - `chunking.py` — `split_into_chunks()`/`summarize_long_text()`: map-reduce chunking for abstractive path only (handles the model's context-window limit); extractive doesn't need this.
-- `summary_grounding.py` — `check_preservation()`/`extract_entities()` (FR-26): regex for dates/amounts, spaCy NER for names; measures entity preservation rate, doesn't guarantee it.
+- `summary_grounding.py` — `check_preservation()`/`extract_entities()` (FR-26): regex for dates/amounts, spaCy NER for names; measures entity preservation rate, doesn't guarantee it. Its `extract_entities()`/`_get_ner_pipeline()` are reused directly by `intent_entities.py` (Phase 7B) rather than reimplemented.
+- `intent_entities.py` — `extract_intent_entities()` (Phase 7B, FR-35): combines summary_grounding's dates/amounts/names extraction with two new pieces — `extract_order_ids()` (new `ORDER_ID_PATTERN`) and `extract_product_names()` (spaCy `PRODUCT` NER label, disclosed low-recall for the small model tier).
 - `thread_summarizer.py` — `ThreadNormalizer`/`ThreadMessage` (FR-27): chronological ordering, per-message quote/signature stripping, near-duplicate (Jaccard) dedup, single cohesive narrative construction.
 - `__init__.py` — empty.
 
@@ -146,6 +204,7 @@ below.
 - `ml_pipeline.py` — `MLPipeline`: TF-IDF-only pipeline (spam's shape); wraps `PipelineConfig`/`PipelineFactory`.
 - `priority_pipeline.py` — `PriorityMLPipeline`: TF-IDF + `ContentFeatures` + `MetadataFeatures` combined via `build_feature_matrix`; same fit/predict/save/load interface as `MLPipeline` so `Trainer` works unchanged.
 - `category_pipeline.py` — `CategoryMLPipeline`: multi-label variant, `OneVsRestClassifier` of 8 binary classifiers; a new class (not a branch on `PriorityMLPipeline`) because fit/predict/predict_proba shapes genuinely differ for multi-label.
+- `intent_pipeline.py` — `IntentMLPipeline` (Phase 7B): multi-label, 9 classes, structurally like `CategoryMLPipeline` (OvR + MultiLabelBinarizer) but TF-IDF-ONLY (no ContentFeatures/MetadataFeatures, no FeatureSchema coupling) and takes plain text not record dicts — a new class rather than a reuse/refactor of CategoryMLPipeline (which hardcodes CATEGORY_LABELS) to avoid touching an already-shipped, artifact-pickled class.
 - `pipeline_config.py` — `PipelineConfig` dataclass: TF-IDF/LR/NB/SVM hyperparameters, one central config object.
 - `pipeline_factory.py` — `PipelineFactory.create_model()`: builds an untrained classifier instance from config + model-type selector.
 - `text_pipeline.py` — `build_text_pipeline()`: simple standalone TF-IDF + LogisticRegression sklearn `Pipeline` (used by early smoke tests, not the production path).
@@ -153,7 +212,7 @@ below.
 
 ## backend/app/preprocessing/
 
-- `email_preprocessor.py` — `EmailPreprocessor` + `PreprocessingConfig`: the real, reusable preprocessing pipeline (HTML strip, quote/signature removal, URL normalization, lemmatization via spaCy, negation-aware stopword removal). Defines the task-specific configs used everywhere: `SPAM_CONFIG`, `PRIORITY_CONFIG`, `CATEGORY_CONFIG`, `SUMMARY_CONFIG`, `SENTIMENT_CONFIG`.
+- `email_preprocessor.py` — `EmailPreprocessor` + `PreprocessingConfig`: the real, reusable preprocessing pipeline (HTML strip, quote/signature removal, URL normalization, lemmatization via spaCy, negation-aware stopword removal). Defines the task-specific configs used everywhere: `SPAM_CONFIG`, `PRIORITY_CONFIG`, `CATEGORY_CONFIG`, `SUMMARY_CONFIG`, `SENTIMENT_CONFIG`. **`SENTIMENT_CONFIG` fixed in Phase 7A**: previously inherited `lowercase=True`, which silently defeated VADER's capitalization-based intensity signal ("GREAT" > "great"); now `lowercase=False, min_token_length=1`. Found via `scripts/qualitative_eval_sentiment.py`.
 - `email_preprocessing.py` — `preprocess_email_body()` + `anonymize_pii()` (placeholder, no-op) — an older/simpler, functional-style preprocessing script; appears to predate `email_preprocessor.py` and is not the one wired into production services.
 - `text_helpers.py` — module-level spaCy load (`en_core_web_sm`, NER/parser disabled) + stopword/negation helpers; standalone utility functions reused by preprocessing.
 - `__init__.py` — empty.
@@ -165,6 +224,8 @@ below.
 - `priority.py` — `PriorityPredictionRequest`/`Response`, feedback schemas; most fields optional with documented training-parity defaults.
 - `category.py` — mirrors priority.py's shape; multi-label response (`categories: [{category, confidence}]`, `all_scores`).
 - `summarization.py` — `SummarizationRequest` (mutually exclusive `body`/`messages`), `ThreadMessageInput`, response with `skipped_short_input`/`preserved_entities`/`entity_preservation_rate`.
+- `sentiment.py` — `SentimentPredictionRequest` (subject/body only, no metadata), response with `sentiment`/`confidence`/`probabilities` (heuristic, not calibrated)/`model_version`/`processing_ms`; feedback schemas (Phase 7A).
+- `intent.py` — `IntentPredictionRequest` (subject/body), response with `intents` (list, may be empty)/`all_scores`/`entities` (FR-35)/`model_version`/`processing_ms`; feedback schemas take list labels, not scalar (Phase 7B).
 - `__init__.py` — empty.
 
 ## backend/app/security/
@@ -178,7 +239,9 @@ below.
 - `priority_service.py` — `PriorityService`: no separate threshold layer (argmax IS the decision); mirrors spam_service's artifact-loading pattern.
 - `category_service.py` — `CategoryService`: owns the "zero categories assigned" fallback policy — assigns `["General"]` using the model's own sub-threshold score when every binary classifier says no.
 - `summarization_service.py` — `SummarizationService`: orchestrates preprocessing → short-input passthrough (FR-25, 200-word floor) → extractive/abstractive → grounding (FR-26). Extractive warmed at startup; abstractive lazy-loaded (~115s cost deferred to first actual use).
-- `feedback_service.py` — `FeedbackLogger`: per-module JSONL append logs (`{module}_feedback.jsonl`); `log_correction()` (scalar or list labels) and `log_summary_feedback()` (accept/reject + quality score). No auto-retraining from feedback.
+- `sentiment_service.py` — `SentimentService` (Phase 7A): preprocesses via `SENTIMENT_CONFIG`, calls `VaderSentimentPredictor`; no artifact/`*ServiceUnavailable` (nothing trained). `MODEL_VERSION = "vader-lexicon-3.3.2"`.
+- `intent_service.py` — `IntentService` (Phase 7B): preprocesses via `CATEGORY_CONFIG` (no dedicated INTENT_CONFIG), calls `IntentPredictor` + `extract_intent_entities()` (on RAW text, not lemmatized — entities need original casing/punctuation); HAS `IntentServiceUnavailable`/503 (trained artifact). No "General"-style fallback — empty intent list is a valid response.
+- `feedback_service.py` — `FeedbackLogger`: per-module JSONL append logs (`{module}_feedback.jsonl`); `log_correction()` (scalar or list labels, reused by sentiment and intent) and `log_summary_feedback()` (accept/reject + quality score). `get_sentiment_feedback_logger()` added Phase 7A, `get_intent_feedback_logger()` added Phase 7B. No auto-retraining from feedback.
 - `__init__.py` — empty.
 
 ## backend/app/splitting/
@@ -229,6 +292,12 @@ below.
 - `prepare_summarization_dataset.py` — Phase 6: builds `summarization_bbc_v1` from the real (but off-domain) BBC News Summary corpus.
 - `evaluate_summarization_models.py` — Phase 6: extractive-vs-abstractive comparison on a bounded BBC test sample, writes `artifacts/summarization_model_comparison.json`.
 - `check_priority_calibration.py` — Phase 4 follow-up: confidence-calibration check (binned confidence vs. accuracy + Brier score) for the shipped priority model.
+- `generate_synthetic_sentiment_dataset.py` — Phase 7A: builds `sentiment_synthetic_v1` from real Enron text, labels via VADER-compound bucketing (NOT human/heuristic-keyword like priority/category); leakage-safe `GroupShuffleSplit` by sender.
+- `train_sentiment_model.py` — Phase 7A: trains TF-IDF+LR/NB/SVM on `sentiment_synthetic_v1` as a **comparison-only** artifact (`sentiment_comparison.joblib`) — NOT loaded by `SentimentService`; measures how well a classifier imitates VADER's own labels (best: LR, 0.33 macro F1), not real-world accuracy.
+- `qualitative_eval_sentiment.py` — Phase 7A: 14 hand-written, author-labelled examples run through the full `SentimentService` preprocessing+prediction path; feeds `docs/error_analysis_sentiment.md` (5/14 matched, not statistically meaningful).
+- `generate_synthetic_intent_dataset.py` — Phase 7B: builds `intent_synthetic_v1` from Enron text, 9-class multi-label keyword-heuristic labels (`intent_keywords.py`) + per-class adaptive thresholds + noise; unlike category, rows may have zero labels (no default class).
+- `train_intent_model.py` — Phase 7B: trains TF-IDF-only OvR LR/NB/SVM on `intent_synthetic_v1`, served (`intent_baseline.joblib`) — unlike sentiment's comparison-only artifact, this IS what `IntentService` loads. LR chosen by F1-macro (0.3891); Escalation (0.0968) and Refund (0.0) are the weak classes.
+- `qualitative_eval_intent.py` — Phase 7B: 14 hand-written examples through the full `IntentService` path; feeds `docs/error_analysis_intent.md` (3/14 exact-set matches). Found the Escalation class fires on unrelated text and misses its own target case.
 
 **One-off experiment scripts (not part of the production path, don't write artifacts):**
 - `experiment_class_weight_tuning.py` — sweeps spam:ham class-weight ratios to see if the FR-11 recall gap can close further than `class_weight="balanced"`.
@@ -257,10 +326,12 @@ below.
 - `57e9d6e5012d_create_priority_prediction_logs_table.py` — creates `priority_prediction_logs`.
 - `83169e56d48c_create_category_prediction_logs_table.py` — creates `category_prediction_logs`; uses generic `sa.JSON()` (not `JSONB`) to match the SQLite-testable model.
 - `f4a71c9d2e83_create_summary_logs_table.py` — creates `summary_logs`; no subject/body columns (matches the model's privacy decision).
+- `a3c7f19b2d4e_create_sentiment_prediction_logs_table.py` — creates `sentiment_prediction_logs` (Phase 7A); verified via a real disposable Postgres 16 Docker container (`alembic upgrade head` from clean, all 5 tables correct), not just SQLite.
+- `c9f2e841a7b3_create_intent_prediction_logs_table.py` — creates `intent_prediction_logs` (Phase 7B), 3 JSON columns; verified via a real disposable Postgres 16 container (all 6 tables correct) PLUS a downgrade/upgrade round-trip (`alembic downgrade -1` then `upgrade head`).
 
 ---
 
-## backend/tests/ (real pytest suite — 151 tests + 1 opt-in slow test)
+## backend/tests/ (real pytest suite — 214 tests + 1 opt-in slow test)
 
 - `conftest.py` — shared `client` fixture (`TestClient(create_app())`, no lifespan events run).
 - `test_health.py` — liveness endpoint only (readiness needs a live DB, not covered here).
@@ -268,10 +339,13 @@ below.
 - `test_db_write_timeout.py` — regression test proving `asyncio.wait_for(DB_WRITE_TIMEOUT_SECONDS)` bounds a hanging DB commit **in the `TestClient` fake-transport harness** — does NOT prove the real-Uvicorn case (see technical debt doc).
 - `test_email_preprocessor.py` — `EmailPreprocessor` regression cases (empty string, HTML, quotes, signatures).
 - `test_feature_schema.py` — `FeatureSchema` determinism + mismatch-detection (Phase 6 Gate 1 hardening).
+- `test_model_metadata_registration.py` — Phase 7A regression test: every prediction-log model (`SpamPredictionLog`/`PriorityPredictionLog`/`CategoryPredictionLog`/`SummaryLog`/`SentimentPredictionLog`) must be registered in `Base.metadata` and `app.models.__all__`.
 - **Spam**: `test_spam_classifier_backend.py` (Protocol boundary proof w/ fake backend), `test_spam_endpoint.py` (integration, real artifact), `test_spam_prediction_log.py` (DB audit log, in-memory SQLite), `test_spam_service_unavailable.py` (503 on missing artifact).
 - **Priority**: `test_priority_dataset.py` (dataset quality/leakage-safe split), `test_priority_endpoint.py` (integration), `test_priority_pipeline.py` (unit, `PriorityMLPipeline` incl. save/load), `test_priority_prediction_log.py` (DB audit log), `test_priority_service_unavailable.py` (503 path).
 - **Category**: `test_category_dataset.py`, `test_category_endpoint.py`, `test_category_pipeline.py`, `test_category_prediction_log.py`, `test_category_service_unavailable.py` — mirror priority's five, adapted for multi-label.
 - **Summarization**: `test_summarization_dataset.py` (BBC dataset quality, real-but-off-domain disclosure), `test_summarization_endpoint.py` (integration, no artifact gate needed), `test_summarization_endpoint_concurrency.py` (regression: abstractive warm-up must run in threadpool, not block the event loop), `test_summarization_security.py` (prompt-injection inertness + no PII anonymization-by-design), `test_summarization_service.py` (unit, abstractive monkeypatched), `test_summary_grounding.py` (real spaCy NER entity-preservation), `test_summary_prediction_log.py` (DB audit log, confirms no source body stored), `test_thread_summarizer.py` (FR-27 narrative construction), `test_chunking.py` (map-reduce chunk splitting), `test_extractive_summarizer.py` (TextRank unit tests), `test_abstractive_summarizer_slow.py` (real ~115s model download/inference, opt-in via `RUN_SLOW_TESTS=1`, skipped by default).
+- **Sentiment** (Phase 7A, no artifact-gate skip needed anywhere — nothing trained): `test_sentiment_predictor.py` (VADER bucketing, PredictionResult shape, ordinal-neighbor-only probability spread), `test_sentiment_service.py` (unit, fake backend), `test_sentiment_endpoint.py` (integration incl. feedback), `test_sentiment_prediction_log.py` (DB audit log, confirms subject/body ARE stored, unlike summary_logs), `test_sentiment_security.py` (prompt-injection N/A + structured-log hygiene), `test_sentiment_dataset.py` (dataset quality + label-matches-bucket_compound consistency check).
+- **Intent** (Phase 7B, artifact-gated like category — skips if `intent_baseline.joblib` missing, except pipeline/entity/dataset tests which don't need it): `test_intent_pipeline.py` (unit, incl. `test_pipeline_has_no_feature_schema_attribute`), `test_intent_entities.py` (order-ID regex incl. the "in order to" false-positive regression, full FR-35 combo), `test_intent_service.py` (unit, fake backend), `test_intent_service_unavailable.py` (503 path, mirrors category), `test_intent_endpoint.py` (integration incl. feedback, zero-intents case), `test_intent_prediction_log.py` (DB audit log incl. entities column), `test_intent_security.py` (prompt-injection N/A + log hygiene), `test_intent_dataset.py` (dataset quality, allows-but-not-all-empty-labels check).
 
 ## backend/ (root-level `test_*.py`) — informal smoke-test scripts, NOT pytest suite (no assertions, just prints; run manually during early development)
 
@@ -314,6 +388,15 @@ below.
 - `phase6_requirements_traceability.md` — FR-25 to FR-28 extracted from the PRD, mapped to design/implementation/test/evidence; also tracks non-functional requirements (latency, ROUGE/BERTScore) and explicitly-deferred items (BERTScore, fine-tuning).
 - `git_workflow.md` — branch strategy (`main`/`develop`/`feature/*`/`fix/*`) and Conventional Commits convention.
 - `technical_debt/database_write_hang.md` — **Status: MITIGATED, NOT ROOT-CAUSED (PARTIAL).** Full investigation record of the reproduced DB-write hang; seven isolation experiments, suspected-but-unconfirmed root causes (real ORM write path, `GUID` TypeDecorator, full `create_app()` assembly interaction), recommended next steps (isolate real ORM write, run full-middleware smoking gun, capture a live stack trace via `py-spy`/`faulthandler`).
+- `data_audit_sentiment.md` — Phase 7A data gate: **no human-labelled email sentiment data exists at all**; Amazon Reviews Polarity audited and rejected (wrong domain AND wrong taxonomy — binary, not 5-class); documents the VADER-zero-shot-served vs. VADER-pseudo-label-trained-classifier decision (§4) and why the trained classifier is built but not served.
+- `annotation_guidelines_sentiment.md` — forward-looking spec for the NOT-YET-STARTED real sentiment annotation effort (5-class ordinal taxonomy, Fleiss' Kappa ≥0.65, 3 annotators, 3,000+ email minimum).
+- `error_analysis_sentiment.md` — qualitative/exploratory only (14 hand-written examples, 5/14 matched): dominant failure patterns are politeness-masked negativity, indirect complaints, sarcasm, and compound-score saturation on long text. Also documents the `SENTIMENT_CONFIG` lowercase bug found and fixed this phase.
+- `phase7a_requirements_traceability.md` — FR-29 to FR-32 extracted from the PRD; documents which sub-requirements (FR-30 emotion, FR-31 priority-integration, FR-32 trend-tracking) were explicitly deferred and why; includes the Gate A-J audit outcome table.
+- `data_audit_intent.md` — Phase 7B data gate: **no human-labelled email intent data exists at all**, independently confirmed (matches PRD's own "custom annotation required" claim); documents `intent_synthetic_v1`'s keyword-heuristic generation and a domain-mismatch finding worse than priority/category's (Order/Refund/Cancel are consumer concepts nearly absent from Enron's B2B mail).
+- `intent_taxonomy.md` — FR-33's 9-class multi-label taxonomy; flags 2 naming collisions (Escalation vs. Priority's escalation-keyword signal; Feedback vs. this system's own feedback mechanism).
+- `intent_labeling_strategy.md` — multi-label decision (determined directly from PRD text, not inferred) + full not-yet-started annotation plan (per-class Fleiss/Cohen Kappa ≥0.65, 3 annotators).
+- `error_analysis_intent.md` — qualitative only (14 examples, 3/14 exact matches); root-causes Escalation's specific unreliability (fires on unrelated text AND misses its own target) to extreme rarity + `class_weight="balanced"` amplifying noisy signal.
+- `phase7b_intent_requirements_traceability.md` — FR-33 to FR-36 extracted from the PRD; documents FR-36 deferral and the Sentiment↔Intent independence boundary; includes the Step-30 gate outcome table.
 
 ## docs/model_cards/*.md
 
@@ -321,6 +404,8 @@ below.
 - `priority_classification.md` — Logistic Regression on synthetic data; **not PRD-compliant** (banner warning); documents a Phase 5 forced retrain after `ContentFeatures` grew.
 - `email_categorization.md` — Calibrated One-vs-Rest SVM on synthetic data; **not PRD-compliant**; documents the "General fallback" policy and unverified per-category calibration.
 - `email_summarization.md` — Extractive (TextRank, default) + abstractive (distilbart-cnn-6-6, opt-in) comparison; evaluated on real-but-off-domain BBC data; documents abstractive's ~4.5s avg / ~7.6s P95 latency (exceeds PRD SLA) as why extractive is the default.
+- `sentiment.md` — VADER lexicon scorer (zero-shot, served) vs. TF-IDF-classifier-trained-on-VADER's-own-pseudo-labels (built, evaluated, NOT served — measured 0.33 macro F1 vs. its own label source, evidence it can only imitate VADER, not improve on it); documents the `SENTIMENT_CONFIG` lowercase bug fix; explicitly states calibration is unmeasurable (no ground truth).
+- `intent.md` — TF-IDF-only OvR Logistic Regression (SERVED, unlike sentiment's comparison classifier), F1-macro 0.3891 on `intent_synthetic_v1`; documents two specific, root-caused reliability issues (Escalation's bidirectional unreliability, Refund's 0.0 F1) as stronger findings than the generic synthetic-data disclaimer; documents the Order-classifier false-positive (separate from, not fixed by, the entity-extraction regex fix).
 
 ## data/**
 
@@ -331,6 +416,8 @@ below.
 - `processed/priority_synthetic_v1/` — real output of `generate_synthetic_priority_dataset.py`: 10,000 rows (7,000/2,121/879 train/val/test), Critical/High/Medium/Low heuristic labels, `run_metadata.json` marks `SYNTHETIC: true, PRD_COMPLIANT: false`.
 - `processed/category_synthetic_v1/` — real output of `generate_synthetic_category_dataset.py`: 10,000 rows (7,000/2,121/879), multi-label, same synthetic/not-PRD-compliant marking.
 - `processed/summarization_bbc_v1/` — real output of `prepare_summarization_dataset.py`: BBC News Summary train/val/test splits, real human summaries but wrong domain.
+- `processed/sentiment_synthetic_v1/` — real output of `generate_synthetic_sentiment_dataset.py` (Phase 7A): 10,000 real Enron emails, 5-class labels from VADER-compound bucketing (7,000/2,121/879 train/val/test); label distribution heavily skewed (64.7% "Very Positive") — itself evidence of VADER's long-text saturation issue, see `docs/error_analysis_sentiment.md`. Comparison-training data only, NOT what the served model uses.
+- `processed/intent_synthetic_v1/` — real output of `generate_synthetic_intent_dataset.py` (Phase 7B): 10,000 real Enron emails, 9-class multi-label keyword-heuristic labels (7,000/2,121/879 train/val/test), 35.3% of rows have zero labels (legitimate, no default class); this IS the training data for the served `intent_baseline.joblib`, unlike sentiment's comparison-only dataset.
 - `raw/spamassassin/` — real corpus, 6,101 files across `easy_ham`/`easy_ham_2`/`hard_ham`/`spam`/`spam_2` subfolders.
 - `raw/enron/` — real corpus (`emails.csv` + checksum); backing source for both synthetic datasets.
 - `raw/sms_spam/spam.csv` — real SMS Spam Collection corpus.
@@ -350,4 +437,5 @@ below.
 
 ## Root files
 
-- `README.md` — primary project overview: progress table, architecture diagram (color-coded real/synthetic/off-domain), quickstart, known gaps list. Read first in any new session.
+- `README.md` — primary project overview: progress table, architecture diagram (color-coded real/synthetic/off-domain/unvalidated-zero-shot), quickstart, known gaps list. Read first in any new session.
+- `memory.md` — this file.
