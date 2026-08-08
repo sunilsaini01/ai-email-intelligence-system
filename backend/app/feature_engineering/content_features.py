@@ -9,6 +9,7 @@ from app.feature_engineering.patterns import (
     CURRENCY_PATTERN,
     SENTENCE_PATTERN,
 )
+from app.feature_engineering.category_keywords import CATEGORY_KEYWORDS
 from app.feature_engineering.priority_keywords import (
     ESCALATION_KEYWORDS,
     SLA_KEYWORDS,
@@ -176,6 +177,19 @@ class ContentFeatureExtractor:
 
         subject_word_count = len(subject_words)
 
+        # Category Features (Module 4 / FR-21) — combines subject + body so
+        # a category cue in the subject line (frequently the strongest
+        # signal, e.g. "RE: Invoice #4471") counts the same as one in the
+        # body, matching how the synthetic label generator scores emails
+        # (scripts/generate_synthetic_category_dataset.py). Computed after
+        # subject_lower exists (moved below the Subject Features block).
+        combined_lower = f"{subject_lower} {body_lower}"
+
+        category_keyword_counts = {
+            category: sum(1 for keyword in keywords if keyword in combined_lower)
+            for category, keywords in CATEGORY_KEYWORDS.items()
+        }
+
         subject_is_uppercase = (
             subject.isupper()
             if subject
@@ -230,6 +244,15 @@ class ContentFeatureExtractor:
             urgency_keyword_count=urgency_keyword_count,
             escalation_keyword_count=escalation_keyword_count,
             sla_keyword_count=sla_keyword_count,
+
+            # Category
+            support_keyword_count=category_keyword_counts["Support"],
+            sales_keyword_count=category_keyword_counts["Sales"],
+            billing_keyword_count=category_keyword_counts["Billing"],
+            legal_keyword_count=category_keyword_counts["Legal"],
+            hr_keyword_count=category_keyword_counts["HR"],
+            it_keyword_count=category_keyword_counts["IT"],
+            marketing_keyword_count=category_keyword_counts["Marketing"],
 
             is_reply=is_reply,
 

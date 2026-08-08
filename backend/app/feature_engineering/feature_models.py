@@ -67,6 +67,20 @@ class ContentFeatures:
     sla_keyword_count: int
 
     # -----------------------
+    # Category Signals (Module 4 / FR-21) — one count per non-General
+    # category; General is the taxonomy's fallback and has no keyword list
+    # of its own (see app/feature_engineering/category_keywords.py).
+    # -----------------------
+
+    support_keyword_count: int
+    sales_keyword_count: int
+    billing_keyword_count: int
+    legal_keyword_count: int
+    hr_keyword_count: int
+    it_keyword_count: int
+    marketing_keyword_count: int
+
+    # -----------------------
     # Email Metadata
     # -----------------------
 

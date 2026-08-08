@@ -10,6 +10,8 @@ from sklearn.metrics import (
     roc_auc_score,
     confusion_matrix,
     classification_report,
+    hamming_loss,
+    multilabel_confusion_matrix,
 )
 
 
@@ -92,6 +94,85 @@ def evaluate_model(
             pass
 
     return results
+
+
+def evaluate_multilabel_model(
+    model: Any,
+    X_test: list[dict],
+    y_test: list[list[str]],
+) -> dict:
+    """
+    Evaluate a multi-label classifier (Module 4 — CategoryMLPipeline).
+
+    Not a variant of evaluate_model()'s `average` parameter (like priority's
+    multiclass case was): multi-label metrics need a fundamentally different
+    input shape (binary indicator matrices, not label vectors) and a
+    genuinely different metric set (Hamming loss and subset accuracy have no
+    single-label equivalent). Forcing this into evaluate_model() would mean
+    branching its internals on a shape assumption every existing (spam,
+    priority) caller doesn't need to think about — a separate function is
+    the honest boundary, mirroring why CategoryMLPipeline is a separate
+    class from PriorityMLPipeline rather than a branch inside it.
+
+    Primary metric per PRD §14.1: F1-micro. Secondary: Hamming loss (also
+    PRD-named). Per-label breakdown and Hamming loss specifically matter here
+    because a single blended score can hide a rare category (e.g. Legal)
+    that never gets predicted at all — same failure mode
+    docs/model_cards/priority_classification.md's "Class Imbalance" section
+    already documents for Priority's Critical class, one label space over.
+    """
+    y_true_bin = model.mlb.transform(y_test)
+
+    predicted_labels = model.predict(X_test)
+    y_pred_bin = model.mlb.transform(predicted_labels)
+
+    label_names = list(model.classes_)
+
+    results = {
+        "hamming_loss": hamming_loss(y_true_bin, y_pred_bin),
+        "f1_micro": f1_score(y_true_bin, y_pred_bin, average="micro", zero_division=0),
+        "f1_macro": f1_score(y_true_bin, y_pred_bin, average="macro", zero_division=0),
+        "f1_weighted": f1_score(y_true_bin, y_pred_bin, average="weighted", zero_division=0),
+        "precision_micro": precision_score(y_true_bin, y_pred_bin, average="micro", zero_division=0),
+        "recall_micro": recall_score(y_true_bin, y_pred_bin, average="micro", zero_division=0),
+        # Exact-match ratio: accuracy_score on a 2D indicator matrix requires
+        # every one of the 8 per-row labels to match, not just one — a much
+        # stricter bar than any per-label metric, reported because it's what
+        # "the model got this email completely right" actually means for a
+        # multi-label task.
+        "subset_accuracy": accuracy_score(y_true_bin, y_pred_bin),
+        "per_label_report": classification_report(
+            y_true_bin,
+            y_pred_bin,
+            target_names=label_names,
+            zero_division=0,
+            output_dict=True,
+        ),
+        "per_label_confusion_matrices": {
+            label: cm.tolist()
+            for label, cm in zip(
+                label_names, multilabel_confusion_matrix(y_true_bin, y_pred_bin), strict=True
+            )
+        },
+    }
+
+    return results
+
+
+def print_multilabel_evaluation(results: dict) -> None:
+    """Pretty-print multi-label evaluation metrics — mirrors print_evaluation()."""
+
+    print("\n==============================")
+    print("MULTI-LABEL MODEL EVALUATION")
+    print("==============================")
+
+    print(f"F1-micro       : {results['f1_micro']:.4f}")
+    print(f"F1-macro       : {results['f1_macro']:.4f}")
+    print(f"F1-weighted    : {results['f1_weighted']:.4f}")
+    print(f"Hamming Loss   : {results['hamming_loss']:.4f}")
+    print(f"Precision-micro: {results['precision_micro']:.4f}")
+    print(f"Recall-micro   : {results['recall_micro']:.4f}")
+    print(f"Subset Accuracy: {results['subset_accuracy']:.4f}")
 
 
 def print_evaluation(

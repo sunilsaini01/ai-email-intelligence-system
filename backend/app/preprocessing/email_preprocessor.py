@@ -183,3 +183,13 @@ PRIORITY_CONFIG = PreprocessingConfig(
     remove_stopwords=False,
     lemmatize=True,
 )
+
+# remove_stopwords=False for the same reason as PRIORITY_CONFIG: several
+# category keyword phrases (app/feature_engineering/category_keywords.py)
+# contain stopwords load-bearingly — "not working", "how do i", "past due" —
+# and stopword removal would strip exactly the words that make those
+# phrases identifiable.
+CATEGORY_CONFIG = PreprocessingConfig(
+    remove_stopwords=False,
+    lemmatize=True,
+)
