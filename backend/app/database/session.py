@@ -27,12 +27,28 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+# Bounds asyncpg's own connection-establishment phase (TCP connect +
+# Postgres startup-message handshake), independent of anything at the
+# asyncio/SQLAlchemy layer above it. Added as part of the Phase 6 Gate 2
+# investigation (docs/technical_debt/database_write_hang.md) after directly
+# reproducing that `asyncio.wait_for(DB_WRITE_TIMEOUT_SECONDS)` around the
+# endpoint's write does NOT reliably bound a hang encountered via a real
+# Uvicorn request when the underlying connection is stuck (TCP connects,
+# but the Postgres protocol handshake never completes — the exact shape a
+# firewalled/unresponsive DB host produces). This targets the SAME failure
+# class one layer lower, at the point asyncpg itself is waiting on the
+# socket, rather than depending on an external cancellation to reach in and
+# stop it — see that doc for the reproduction that motivated this and why
+# it does not fully explain every symptom that was observed.
+DB_CONNECT_TIMEOUT_SECONDS = 3.0
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,       # logs raw SQL — useful locally, turn off in prod (noisy + perf cost)
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,        # detects stale/dropped connections before using them
+    connect_args={"timeout": DB_CONNECT_TIMEOUT_SECONDS},  # asyncpg's own connect() timeout
 )
 
 AsyncSessionLocal = async_sessionmaker(
