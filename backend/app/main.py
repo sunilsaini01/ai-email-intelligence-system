@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.middleware.exception_handlers import register_exception_handlers
 from app.middleware.request_logging import RequestLoggingMiddleware
+from app.services.category_service import get_category_service
 from app.services.priority_service import get_priority_service
 from app.services.spam_service import get_spam_service
 
@@ -53,7 +54,11 @@ async def lifespan(app: FastAPI):
     does. Verified empirically before relying on it; see
     tests/test_startup_warmup.py for the test that actually exercises this.
     """
-    for name, get_service in (("spam", get_spam_service), ("priority", get_priority_service)):
+    for name, get_service in (
+        ("spam", get_spam_service),
+        ("priority", get_priority_service),
+        ("category", get_category_service),
+    ):
         try:
             get_service()
             logger.info(f"{name}_service_warmed_up")

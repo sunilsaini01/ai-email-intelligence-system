@@ -38,10 +38,18 @@ class FeedbackLogger:
         self,
         subject: str,
         body: str,
-        predicted_label: str,
-        corrected_label: str,
+        predicted_label: str | list[str],
+        corrected_label: str | list[str],
         comment: str | None = None,
     ) -> str:
+        """
+        `predicted_label`/`corrected_label` accept either a scalar string
+        (spam/priority's single-label corrections) or a list of strings
+        (category's multi-label corrections, FR-22) — additive widening,
+        not a behavior change for existing callers: json.dumps handles
+        both shapes identically, and every existing call site already
+        passes a plain string.
+        """
         feedback_id = str(uuid.uuid4())
 
         record = {
@@ -67,3 +75,7 @@ def get_feedback_logger() -> FeedbackLogger:
 
 def get_priority_feedback_logger() -> FeedbackLogger:
     return FeedbackLogger(module="priority")
+
+
+def get_category_feedback_logger() -> FeedbackLogger:
+    return FeedbackLogger(module="category")
