@@ -17,3 +17,10 @@ python-dotenv==1.0.1
 torch==2.12.1
 transformers==5.13.0
 networkx==3.6.1
+
+# Phase 7A (sentiment analysis) additions only:
+# vaderSentiment is a lexicon/rule-based scorer (no training data, no model
+# weights) -- see docs/data_audit_sentiment.md for why this is the served
+# default rather than a classifier trained on the available (domain- and
+# taxonomy-mismatched) sentiment data.
+vaderSentiment==3.3.2
