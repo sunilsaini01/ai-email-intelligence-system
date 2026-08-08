@@ -70,3 +70,28 @@ DATE_PATTERN = re.compile(
     r"|\b(?:Mon|Tues?|Wed(?:nes)?|Thu(?:rs)?|Fri|Sat(?:ur)?|Sun)(?:day)?\b)",  # Friday
     re.IGNORECASE,
 )
+
+# ----------------------------------------
+# Order ID Detection (Module 7 / FR-35 — intent entity extraction)
+# ----------------------------------------
+# Covers the PRD's own worked example ("order #45821") plus common written
+# variants ("order number 45821", "order no. 45821", "order: 45821",
+# "order no. AB-9910"). Deliberately requires an explicit "order" cue word
+# rather than matching any bare "#12345" — a bare hash-number is ambiguous
+# (could be a ticket ID, a phone extension, anything) and matching it
+# unconditionally would produce false positives on non-order numeric
+# references. A disclosed recall gap (an order ID mentioned without any
+# "order" cue word nearby would be missed), not a precision-vs-recall
+# tuning left unresolved.
+#
+# The captured token is additionally required (via lookahead) to contain
+# at least one digit -- found necessary during Phase 7B testing: without
+# this, "in order to proceed" matched "to" as a 2-character "order ID",
+# a real false positive the qualitative error analysis specifically
+# flagged as a risk (docs/error_analysis_intent.md). Genuine order IDs
+# contain a number; ordinary words following "order" (to, that, this) do
+# not.
+ORDER_ID_PATTERN = re.compile(
+    r"\border\s*(?:#|number|no\.?|:)?\s*#?\s*((?=[A-Za-z0-9-]*\d)[A-Za-z0-9-]{2,20})\b",
+    re.IGNORECASE,
+)
