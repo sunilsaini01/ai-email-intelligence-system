@@ -1,0 +1,1 @@
+{"feedback_id": "78433c32-ad9e-44c5-a99f-6dc851351e66", "module": "intent", "subject": "x", "body": "y", "predicted_label": ["Cancel"], "corrected_label": ["Cancel", "Refund"], "comment": null, "created_at": "2026-08-08T21:16:36.181971+00:00"}
