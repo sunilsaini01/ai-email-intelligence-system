@@ -165,6 +165,20 @@ SPAM_CONFIG = PreprocessingConfig(
 SENTIMENT_CONFIG = PreprocessingConfig(
     remove_stopwords=False,
     lemmatize=False,
+    # Found via Phase 7A's qualitative evaluation
+    # (backend/scripts/qualitative_eval_sentiment.py), not assumed: this
+    # config predates any real consumer (written in an earlier phase,
+    # never wired into a service until now), and its inherited
+    # lowercase=True default was silently defeating VADER's own
+    # capitalization-based intensity signal -- VADER's lexicon explicitly
+    # scores "GREAT" more intensely than "great" (see vaderSentiment's own
+    # docs), so lowercasing before scoring throws away real signal the
+    # scorer is designed to use. min_token_length=1 for the same reason as
+    # SUMMARY_CONFIG below: VaderSentimentPredictor scores whole text, not
+    # a token bag, so dropping short tokens ("no", "ok") ahead of scoring
+    # is actively harmful, not a harmless cleaning step.
+    lowercase=False,
+    min_token_length=1,
 )
 
 SUMMARY_CONFIG = PreprocessingConfig(
