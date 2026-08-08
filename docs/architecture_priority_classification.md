@@ -56,6 +56,21 @@ after each change and stayed green throughout:
 | `preprocessing/email_preprocessor.py` | New `PRIORITY_CONFIG` (existing pattern: `SPAM_CONFIG`, `SENTIMENT_CONFIG`, `SUMMARY_CONFIG`) | New constant, nothing removed |
 | `services/feedback_service.py` | `FeedbackLogger` gained `module` param; new `get_priority_feedback_logger()` | Defaults to `module="spam"` — existing `get_feedback_logger()` unchanged |
 
+**Phase 5 addendum (2026-08-08):** Email Categorization added 7 fields to
+`ContentFeatures` (category keyword counts) — additive to the dataclass, but
+NOT free for priority, because priority's *trained artifact* had already
+baked in the old feature width via its fitted `StandardScaler`. Extending a
+shared dataclass is backward-compatible for code; it is not backward-
+compatible for anything that persisted a fitted transform over that
+dataclass's shape. This broke `tests/test_priority_endpoint.py` and
+friends until `priority_baseline.joblib` was retrained (same script, same
+data, new feature width) — see
+`docs/model_cards/priority_classification.md`'s "Phase 5 Retrain Note" for
+the full account and the resulting metric deltas. Lesson for the next
+module that extends `ContentFeatures` or `MetadataFeatures`: budget a
+retrain-and-diff pass for every existing consumer of `build_feature_matrix`,
+not just a "did it still import" check.
+
 **Genuinely new** (no existing analog to extend): `PriorityMLPipeline`,
 `PriorityPredictor`, `PriorityClassifierBackend`, `PriorityService`,
 `priority_keywords.py`, the priority API/schema/DB/repository/migration

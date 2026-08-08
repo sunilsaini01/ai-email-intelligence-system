@@ -2,82 +2,82 @@
     "comparison": [
         {
             "model": "logistic_regression",
-            "macro_f1": 0.4712,
-            "macro_precision": 0.4658,
-            "macro_recall": 0.4903,
-            "accuracy": 0.6633,
-            "critical_high_f1": 0.2667,
-            "critical_high_recall": 0.3252,
-            "critical_high_precision": 0.2303,
+            "macro_f1": 0.4882,
+            "macro_precision": 0.4843,
+            "macro_recall": 0.5142,
+            "accuracy": 0.6758,
+            "critical_high_f1": 0.2871,
+            "critical_high_recall": 0.3588,
+            "critical_high_precision": 0.2528,
             "per_class_f1": {
-                "Low": 0.7856,
-                "Medium": 0.566,
-                "High": 0.4845,
-                "Critical": 0.0488
+                "Low": 0.7962,
+                "Medium": 0.5825,
+                "High": 0.4891,
+                "Critical": 0.0851
             },
             "per_class_recall": {
-                "Low": 0.7932,
-                "Medium": 0.5175,
-                "High": 0.5595,
-                "Critical": 0.0909
+                "Low": 0.8124,
+                "Medium": 0.527,
+                "High": 0.5357,
+                "Critical": 0.1818
             },
             "per_class_precision": {
-                "Low": 0.7782,
-                "Medium": 0.6245,
-                "High": 0.4273,
-                "Critical": 0.0333
+                "Low": 0.7807,
+                "Medium": 0.651,
+                "High": 0.45,
+                "Critical": 0.0556
             },
             "confusion_matrix": [
                 [
-                    372,
-                    73,
-                    12,
+                    381,
+                    64,
+                    11,
+                    13
+                ],
+                [
+                    100,
+                    166,
+                    37,
                     12
                 ],
                 [
-                    99,
-                    163,
-                    42,
-                    11
-                ],
-                [
-                    7,
+                    6,
                     24,
-                    47,
-                    6
+                    45,
+                    9
                 ],
                 [
-                    0,
                     1,
-                    9,
-                    1
+                    1,
+                    7,
+                    2
                 ]
             ]
         },
         {
             "model": "naive_bayes",
-            "macro_f1": 0.297,
-            "macro_precision": 0.2845,
-            "macro_recall": 0.3161,
-            "accuracy": 0.5995,
+            "macro_f1": 0.2954,
+            "macro_precision": 0.283,
+            "macro_recall": 0.3145,
+            "accuracy": 0.5973,
             "critical_high_f1": 0.0,
             "critical_high_recall": 0.0,
             "critical_high_precision": 0.0,
             "per_class_f1": {
-                "Low": 0.7327,
-                "Medium": 0.4553,
+                "Low": 0.7313,
+                "Medium": 0.4501,
                 "High": 0.0,
                 "Critical": 0.0
             },
             "per_class_recall": {
                 "Low": 0.8358,
-                "Medium": 0.4286,
+                "Medium": 0.4222,
                 "High": 0.0,
                 "Critical": 0.0
             },
             "per_class_precision": {
-                "Low": 0.6522,
-                "Medium": 0.4856,
+                "Low": 0.6501,
+                "Medium": 0.4819,
                 "High": 0.0,
                 "Critical": 0.0
             },
@@ -89,8 +89,8 @@
                     0
                 ],
                 [
-                    180,
-                    135,
+                    182,
+                    133,
                     0,
                     0
                 ],
@@ -110,48 +110,48 @@
         },
         {
             "model": "svm",
-            "macro_f1": 0.3609,
-            "macro_precision": 0.4676,
-            "macro_recall": 0.368,
-            "accuracy": 0.678,
-            "critical_high_f1": 0.0538,
-            "critical_high_recall": 0.0298,
-            "critical_high_precision": 0.2778,
+            "macro_f1": 0.3522,
+            "macro_precision": 0.479,
+            "macro_recall": 0.3641,
+            "accuracy": 0.6792,
+            "critical_high_f1": 0.0337,
+            "critical_high_recall": 0.0179,
+            "critical_high_precision": 0.3,
             "per_class_f1": {
-                "Low": 0.8098,
-                "Medium": 0.5261,
-                "High": 0.1075,
+                "Low": 0.8109,
+                "Medium": 0.5305,
+                "High": 0.0674,
                 "Critical": 0.0
             },
             "per_class_recall": {
-                "Low": 0.9488,
-                "Medium": 0.4635,
-                "High": 0.0595,
+                "Low": 0.951,
+                "Medium": 0.4698,
+                "High": 0.0357,
                 "Critical": 0.0
             },
             "per_class_precision": {
-                "Low": 0.7063,
-                "Medium": 0.6083,
-                "High": 0.5556,
+                "Low": 0.7068,
+                "Medium": 0.6091,
+                "High": 0.6,
                 "Critical": 0.0
             },
             "confusion_matrix": [
                 [
-                    445,
-                    24,
+                    446,
+                    23,
                     0,
                     0
                 ],
                 [
                     166,
-                    146,
-                    3,
+                    148,
+                    1,
                     0
                 ],
                 [
                     18,
-                    61,
-                    5,
+                    63,
+                    3,
                     0
                 ],
                 [
@@ -164,7 +164,7 @@
         }
     ],
     "best_model": "logistic_regression",
-    "model_version": "logistic_regression-20260807-195520",
+    "model_version": "logistic_regression-20260808-132312",
     "labels": [
         "Low",
         "Medium",
