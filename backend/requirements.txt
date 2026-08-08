@@ -7,3 +7,13 @@ asyncpg==0.29.0
 alembic==1.18.4
 python-json-logger==2.0.7
 python-dotenv==1.0.1
+
+# NOTE: this file was, and remains, incomplete relative to Phases 1-5's
+# actual runtime dependencies (scikit-learn, pandas, numpy, joblib, spacy,
+# beautifulsoup4, nltk, presidio-analyzer/anonymizer are all imported by
+# existing modules but were never added here — a pre-existing gap, not
+# introduced by Phase 6, and out of this phase's scope to reconcile).
+# Phase 6 (email summarization) additions only:
+torch==2.12.1
+transformers==5.13.0
+networkx==3.6.1
