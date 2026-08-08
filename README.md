@@ -26,6 +26,102 @@ metrics as real-world evidence would be actively misleading. Spam's metrics
 are real and PRD-relevant; priority's and categorization's are
 pipeline-validation only.
 
+## Architecture (Completed Work)
+
+Request flow, shared ML infrastructure, and data pipeline for everything
+built so far (Phases 1–5). Color coding matters here as much as the boxes
+do: **green is real, PRD-relevant evidence (Spam); amber is a working
+pipeline trained on synthetic data, not yet PRD-compliant (Priority,
+Categorization)** — see the "Progress" disclosure above before reading
+amber-path metrics as anything more than that.
+
+```mermaid
+flowchart TB
+    Client(["Client"])
+
+    subgraph API["FastAPI /api/v1 — modular monolith"]
+        HealthEP["/health, /health/ready"]
+        SpamEP["/spam/predict<br/>/spam/feedback"]
+        PriorityEP["/priority/predict<br/>/priority/feedback"]
+        CategoryEP["/categorization/predict<br/>/categorization/feedback"]
+    end
+
+    subgraph Services["Service layer"]
+        SpamSvc["SpamService"]
+        PrioritySvc["PriorityService"]
+        CategorySvc["CategoryService"]
+    end
+
+    subgraph Inference["Inference — Protocol-backed backends"]
+        SpamPred["SpamPredictor"]
+        PriorityPred["PriorityPredictor"]
+        CategoryPred["CategoryPredictor"]
+    end
+
+    subgraph Artifacts["Trained artifacts — artifacts/"]
+        SpamModel["spam_baseline.joblib<br/>TF-IDF + calibrated SVM"]
+        PriorityModel["priority_baseline.joblib<br/>TF-IDF + features + LogReg"]
+        CategoryModel["category_baseline.joblib<br/>TF-IDF + features + OvR SVM"]
+    end
+
+    subgraph Shared["Shared ML infrastructure"]
+        Preprocess["EmailPreprocessor<br/>(task-specific configs)"]
+        Features["Content / Metadata<br/>feature extractors"]
+        Pipelines["MLPipeline / PriorityMLPipeline<br/>/ CategoryMLPipeline"]
+        Training["Trainer + ArtifactManager"]
+    end
+
+    subgraph Data["Data pipeline — DVC-versioned"]
+        Raw["Raw corpora:<br/>SpamAssassin, Enron,<br/>SMS Spam, Amazon Reviews"]
+        Synthetic["Synthetic bootstrap:<br/>priority_synthetic_v1<br/>category_synthetic_v1"]
+    end
+
+    subgraph DB["PostgreSQL — audit logging"]
+        SpamLog[("spam_prediction_logs")]
+        PriorityLog[("priority_prediction_logs")]
+        CategoryLog[("category_prediction_logs")]
+    end
+
+    Feedback[["*_feedback.jsonl<br/>(human corrections)"]]
+
+    Client --> API
+    SpamEP --> SpamSvc --> SpamPred --> SpamModel
+    PriorityEP --> PrioritySvc --> PriorityPred --> PriorityModel
+    CategoryEP --> CategorySvc --> CategoryPred --> CategoryModel
+
+    SpamSvc -.-> Preprocess
+    PrioritySvc -.-> Preprocess
+    CategorySvc -.-> Preprocess
+
+    Training --> Pipelines --> Features
+    Pipelines -.-> Preprocess
+    Training --> Artifacts
+
+    Raw --> Training
+    Raw -. heuristic labels .-> Synthetic --> Training
+
+    SpamEP --> SpamLog
+    PriorityEP --> PriorityLog
+    CategoryEP --> CategoryLog
+    SpamEP -.-> Feedback
+    PriorityEP -.-> Feedback
+    CategoryEP -.-> Feedback
+
+    classDef real fill:#1b4332,stroke:#40916c,color:#fff,stroke-width:2px
+    classDef synthetic fill:#7f5539,stroke:#b08968,color:#fff,stroke-width:2px
+    classDef infra fill:#1d3557,stroke:#457b9d,color:#fff
+
+    class SpamEP,SpamSvc,SpamPred,SpamModel,SpamLog real
+    class PriorityEP,PrioritySvc,PriorityPred,PriorityModel,PriorityLog,CategoryEP,CategorySvc,CategoryPred,CategoryModel,CategoryLog,Synthetic synthetic
+    class Preprocess,Features,Pipelines,Training,Raw infra
+```
+
+Everything in this diagram is deployed as one FastAPI process (no
+Kafka/microservices — see `docs/architecture.md` for why). Modules 6–15
+(Summarization, Sentiment, Routing, RAG, Auto-Reply, Dashboard, ...) aren't
+built yet and are deliberately left off this diagram rather than sketched
+as a guess.
+
 ## What's Here
 
 **Backend**: FastAPI (async), layered architecture (`api` / `services` /
