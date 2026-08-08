@@ -19,7 +19,9 @@ from app.core.logging import setup_logging
 from app.middleware.exception_handlers import register_exception_handlers
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.services.category_service import get_category_service
+from app.services.intent_service import get_intent_service
 from app.services.priority_service import get_priority_service
+from app.services.sentiment_service import get_sentiment_service
 from app.services.spam_service import get_spam_service
 from app.services.summarization_service import get_summarization_service
 
@@ -61,11 +63,18 @@ async def lifespan(app: FastAPI):
     # instead — see app/services/summarization_service.py's module
     # docstring for why (its ~115s first-load cost would otherwise nearly
     # double this process's startup time for a path most requests won't use).
+    #
+    # sentiment is the cheapest of all five: SentimentIntensityAnalyzer()
+    # just loads a small, fixed lexicon shipped inside the vaderSentiment
+    # package — no model download, no unpickling, nothing analogous to
+    # priority's ~29s first-construction cost.
     for name, get_service in (
         ("spam", get_spam_service),
         ("priority", get_priority_service),
         ("category", get_category_service),
         ("summarization", get_summarization_service),
+        ("sentiment", get_sentiment_service),
+        ("intent", get_intent_service),
     ):
         try:
             get_service()

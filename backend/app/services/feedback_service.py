@@ -125,3 +125,11 @@ def get_category_feedback_logger() -> FeedbackLogger:
 
 def get_summarization_feedback_logger() -> FeedbackLogger:
     return FeedbackLogger(module="summarization")
+
+
+def get_sentiment_feedback_logger() -> FeedbackLogger:
+    return FeedbackLogger(module="sentiment")
+
+
+def get_intent_feedback_logger() -> FeedbackLogger:
+    return FeedbackLogger(module="intent")
