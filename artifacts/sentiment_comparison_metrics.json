@@ -1,0 +1,222 @@
+{
+    "comparison": [
+        {
+            "model": "logistic_regression",
+            "macro_f1": 0.3324,
+            "weighted_f1": 0.6392,
+            "macro_precision": 0.3648,
+            "macro_recall": 0.3455,
+            "accuracy": 0.6212,
+            "per_class_f1": {
+                "Very Negative": 0.1613,
+                "Negative": 0.04,
+                "Neutral": 0.3878,
+                "Positive": 0.289,
+                "Very Positive": 0.7837
+            },
+            "per_class_recall": {
+                "Very Negative": 0.1852,
+                "Negative": 0.0227,
+                "Neutral": 0.3333,
+                "Positive": 0.4505,
+                "Very Positive": 0.7359
+            },
+            "per_class_precision": {
+                "Very Negative": 0.1429,
+                "Negative": 0.1667,
+                "Neutral": 0.4634,
+                "Positive": 0.2128,
+                "Very Positive": 0.8381
+            },
+            "confusion_matrix": [
+                [
+                    5,
+                    0,
+                    2,
+                    9,
+                    11
+                ],
+                [
+                    2,
+                    1,
+                    3,
+                    20,
+                    18
+                ],
+                [
+                    0,
+                    1,
+                    19,
+                    29,
+                    8
+                ],
+                [
+                    2,
+                    1,
+                    4,
+                    50,
+                    54
+                ],
+                [
+                    26,
+                    3,
+                    13,
+                    127,
+                    471
+                ]
+            ]
+        },
+        {
+            "model": "naive_bayes",
+            "macro_f1": 0.2128,
+            "weighted_f1": 0.6383,
+            "macro_precision": 0.3141,
+            "macro_recall": 0.2223,
+            "accuracy": 0.7304,
+            "per_class_f1": {
+                "Very Negative": 0.0,
+                "Negative": 0.0,
+                "Neutral": 0.1176,
+                "Positive": 0.0968,
+                "Very Positive": 0.8495
+            },
+            "per_class_recall": {
+                "Very Negative": 0.0,
+                "Negative": 0.0,
+                "Neutral": 0.0702,
+                "Positive": 0.0541,
+                "Very Positive": 0.9875
+            },
+            "per_class_precision": {
+                "Very Negative": 0.0,
+                "Negative": 0.0,
+                "Neutral": 0.3636,
+                "Positive": 0.4615,
+                "Very Positive": 0.7453
+            },
+            "confusion_matrix": [
+                [
+                    0,
+                    0,
+                    1,
+                    0,
+                    26
+                ],
+                [
+                    2,
+                    0,
+                    0,
+                    2,
+                    40
+                ],
+                [
+                    2,
+                    1,
+                    4,
+                    3,
+                    47
+                ],
+                [
+                    1,
+                    0,
+                    1,
+                    6,
+                    103
+                ],
+                [
+                    1,
+                    0,
+                    5,
+                    2,
+                    632
+                ]
+            ]
+        },
+        {
+            "model": "svm",
+            "macro_f1": 0.2917,
+            "weighted_f1": 0.6689,
+            "macro_precision": 0.4609,
+            "macro_recall": 0.2842,
+            "accuracy": 0.7531,
+            "per_class_f1": {
+                "Very Negative": 0.0,
+                "Negative": 0.0417,
+                "Neutral": 0.4884,
+                "Positive": 0.0678,
+                "Very Positive": 0.8606
+            },
+            "per_class_recall": {
+                "Very Negative": 0.0,
+                "Negative": 0.0227,
+                "Neutral": 0.3684,
+                "Positive": 0.036,
+                "Very Positive": 0.9938
+            },
+            "per_class_precision": {
+                "Very Negative": 0.0,
+                "Negative": 0.25,
+                "Neutral": 0.7241,
+                "Positive": 0.5714,
+                "Very Positive": 0.7589
+            },
+            "confusion_matrix": [
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    27
+                ],
+                [
+                    1,
+                    1,
+                    1,
+                    0,
+                    41
+                ],
+                [
+                    0,
+                    0,
+                    21,
+                    2,
+                    34
+                ],
+                [
+                    0,
+                    2,
+                    5,
+                    4,
+                    100
+                ],
+                [
+                    0,
+                    1,
+                    2,
+                    1,
+                    636
+                ]
+            ]
+        }
+    ],
+    "best_model": "logistic_regression",
+    "labels": [
+        "Very Negative",
+        "Negative",
+        "Neutral",
+        "Positive",
+        "Very Positive"
+    ],
+    "vader_benchmark": {
+        "avg_latency_ms": 0.7925,
+        "total_ms_for_test_set": 696.59,
+        "test_set_size": 879,
+        "note": "Accuracy intentionally not reported here -- the test labels are VADER's own bucketed compound score, so 'VADER accuracy against them' is ~100% by construction, not a real evaluation. See docs/model_cards/sentiment.md."
+    },
+    "train_size": 7000,
+    "test_size": 879,
+    "SYNTHETIC_DATA": true,
+    "PRD_COMPLIANT": false,
+    "SERVED_BY_API": false,
+    "warning": "This artifact is NOT loaded by SentimentService. Test labels are VADER's own bucketed compound score (data/processed/sentiment_synthetic_v1), so these metrics measure how well a classical classifier can imitate VADER from surface text patterns, not real-world sentiment accuracy. See docs/data_audit_sentiment.md and docs/model_cards/sentiment.md."
+}
