@@ -1,0 +1,45 @@
+{
+    "evaluated_at": "2026-08-08T16:58:14.345490+00:00",
+    "dataset": "summarization_bbc_v1",
+    "sample_size": 40,
+    "extractive": {
+        "model": "extractive_textrank",
+        "rouge": {
+            "rouge1_f": 0.6843,
+            "rouge2_f": 0.6233,
+            "rougeL_f": 0.4834,
+            "n_examples": 40
+        },
+        "avg_latency_ms": 2.57,
+        "p95_latency_ms": 4.41,
+        "avg_entity_preservation_rate": 0.4722,
+        "n_examples_with_entities": 39,
+        "sample_candidates": [
+            "Asylum children to face returns\n\nThe UK government is planning to return asylum seeker children without parents to Albania. The pilot, included in the government's five-year immigration plan, aims to return unaccompanied asylum-seeking children from Albania who have failed in their asylum claims. \" In its five-year immigration plan, announced on Tuesday, the government said it was addressing \"the difficult issue\" of returning unaccompanied asylum seeking children. A spokesman for the Home Office said it was wholly wrong to suggest that the plan was to return children \"and leave them to rot\". \"We are developing a returns programme for unaccompanied asylum-seeking children whose asylum and humanitarian protection claims have been refused,\" said the spokesman.",
+            "Uefa approves fake grass\n\nUefa says it will allow European matches to be played on artificial pitches from the start of next season. Luton, Preston, Queens Park Rangers and other clubs used to have plastic pitches during the the 1980s but, after a two-year study, Uefa insists the surfaces have moved on. Uefa spokesman Rob Faulkner said: \"People in England have bad memories of the artificial pitches of Luton and QPR in the 1980s, but the latest generation are completely different and are much more like grass. \"We have sanctioned its use from the start of next season but only as long as it is the latest generation of artificial turf and meets a whole series of standards. \" Several leading clubs from Scandinavia, Russia and eastern Europe - especially those who only play Champions League or Uefa Cup matches in winter - are now expected to instal artificial pitches.",
+            "Dallaglio eyeing Lions tour place\n\nFormer England captain Lawrence Dallaglio still harbours hopes of a place on the British and Irish Lions tour to New Zealand. But Dallaglio, who called time on England earlier this year, said: \"I assure you I wouldn't let anyone down. Dallaglio toured South Africa with the Lions in 1997 but was forced home early with a knee injury from the trip to Australia three years ago. \"From what I witnessed at close quarters on Sunday in our Heineken Cup match against Leicester, I certainly didn't feel out of place alongside those players, many of whom will be on the trip. \"If Clive feels he has no need to look outside the international crop, then fine."
+        ]
+    },
+    "abstractive": {
+        "model": "abstractive_distilbart_cnn_6_6",
+        "rouge": {
+            "rouge1_f": 0.3575,
+            "rouge2_f": 0.2606,
+            "rougeL_f": 0.2782,
+            "n_examples": 40
+        },
+        "avg_latency_ms": 4501.72,
+        "p95_latency_ms": 7601.15,
+        "avg_entity_preservation_rate": 0.3133,
+        "n_examples_with_entities": 39,
+        "n_truncated_inputs": 1,
+        "sample_candidates": [
+            "UK government plans to return asylum seeker children without parents to Albania . Scheme could be extended to children from other countries . Children's charities have reacted with alarm, saying policy amounts to forcible removal . Home Office says it may be in the children's best interests if it reunites them with their communities .",
+            "Uefa says it will allow European matches to be played on artificial pitches from the start of next season . Luton, Preston, QPR and other clubs used to have plastic pitches during the 1980s . Uefa insists the surfaces have moved on after a two",
+            "Former England captain Lawrence Dallaglio still harbours hopes of a place on the British and Irish Lions tour to New Zealand . The 32-year-old was forced home early with a knee injury from the trip to Australia three years ago . He also felt concentrating on club rugby could have prolonged his international shelf-life ."
+        ]
+    },
+    "SYNTHETIC_DATA": false,
+    "PRD_COMPLIANT": false,
+    "warning": "Evaluated against BBC News Summary -- real, human-written summaries, but news articles, not email, and at a length that doesn't match FR-25. These are MODEL VALIDATION metrics (real quality signal, off-domain), not PRD-compliance evidence. See docs/data_audit_summarization.md."
+}
