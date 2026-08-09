@@ -110,6 +110,50 @@ class FeedbackLogger:
 
         return feedback_id
 
+    def log_routing_feedback(
+        self,
+        subject: str,
+        body: str,
+        predicted_department: str | None,
+        corrected_department: str | None,
+        predicted_action: str,
+        corrected_action: str | None = None,
+        comment: str | None = None,
+    ) -> str:
+        """
+        Routing's feedback shape (department + action pair, not a single
+        predicted/corrected label) doesn't fit log_correction's shape any
+        more cleanly than summarization's did -- a parallel method, same as
+        log_summary_feedback, writing to the same per-module JSONL file.
+
+        Per Phase 8's brief SS24/RULE (FR-41's "adjust rule weights" is
+        deliberately NOT implemented): this only records feedback. Nothing
+        in this codebase auto-adjusts routing_rules.py's thresholds or
+        rule set from a feedback file -- promoting corrected routing
+        decisions into a rule change would be a separate, explicit, human-
+        reviewed step, same stance every other module's feedback path
+        already takes.
+        """
+        feedback_id = str(uuid.uuid4())
+
+        record = {
+            "feedback_id": feedback_id,
+            "module": self.module,
+            "subject": subject,
+            "body": body,
+            "predicted_department": predicted_department,
+            "corrected_department": corrected_department,
+            "predicted_action": predicted_action,
+            "corrected_action": corrected_action,
+            "comment": comment,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+
+        return feedback_id
+
 
 def get_feedback_logger() -> FeedbackLogger:
     return FeedbackLogger()
@@ -133,3 +177,7 @@ def get_sentiment_feedback_logger() -> FeedbackLogger:
 
 def get_intent_feedback_logger() -> FeedbackLogger:
     return FeedbackLogger(module="intent")
+
+
+def get_routing_feedback_logger() -> FeedbackLogger:
+    return FeedbackLogger(module="routing")
