@@ -1,0 +1,18 @@
+{
+  "model_version": "tfidf_baseline-20260809-130541",
+  "dimension": 1024,
+  "corpus": [
+    "data/processed/priority_synthetic_v1/train.parquet",
+    "data/processed/category_synthetic_v1/train.parquet"
+  ],
+  "corpus_size_raw": 7000,
+  "corpus_size_cleaned": 6991,
+  "corpus_labels_used": false,
+  "max_features": 1024,
+  "min_df": 3,
+  "vocabulary_sanity_check_terms_found": [
+    "contract",
+    "meeting"
+  ],
+  "created_at": "2026-08-09T13:05:41.799148+00:00"
+}
