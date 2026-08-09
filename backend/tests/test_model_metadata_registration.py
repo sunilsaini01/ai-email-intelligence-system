@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "sentiment_prediction_logs",
     "intent_prediction_logs",
     "routing_decision_logs",
+    "emails",
 }
 
 
@@ -33,6 +34,7 @@ def test_every_prediction_log_table_is_registered_in_base_metadata():
 def test_models_dunder_all_matches_the_actual_registered_models():
     expected_names = {
         "CategoryPredictionLog",
+        "EmailRecord",
         "IntentPredictionLog",
         "PriorityPredictionLog",
         "RoutingDecisionLog",
