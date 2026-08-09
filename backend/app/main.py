@@ -21,6 +21,7 @@ from app.middleware.request_logging import RequestLoggingMiddleware
 from app.services.category_service import get_category_service
 from app.services.intent_service import get_intent_service
 from app.services.priority_service import get_priority_service
+from app.services.routing_service import get_routing_service
 from app.services.sentiment_service import get_sentiment_service
 from app.services.spam_service import get_spam_service
 from app.services.summarization_service import get_summarization_service
@@ -64,10 +65,18 @@ async def lifespan(app: FastAPI):
     # docstring for why (its ~115s first-load cost would otherwise nearly
     # double this process's startup time for a path most requests won't use).
     #
-    # sentiment is the cheapest of all five: SentimentIntensityAnalyzer()
+    # sentiment is the cheapest of the first five: SentimentIntensityAnalyzer()
     # just loads a small, fixed lexicon shipped inside the vaderSentiment
     # package — no model download, no unpickling, nothing analogous to
     # priority's ~29s first-construction cost.
+    #
+    # routing is cheaper still: RoutingService's constructor does nothing
+    # but store None defaults — it resolves spam/priority/category/
+    # sentiment/intent lazily, per-request, inside route() (see
+    # app/services/routing_service.py's module docstring on why: a
+    # RoutingService that ate one upstream service's construction failure
+    # would defeat its own per-signal failure isolation). Warmed up here
+    # only for symmetry with every other module's startup log line.
     for name, get_service in (
         ("spam", get_spam_service),
         ("priority", get_priority_service),
@@ -75,6 +84,7 @@ async def lifespan(app: FastAPI):
         ("summarization", get_summarization_service),
         ("sentiment", get_sentiment_service),
         ("intent", get_intent_service),
+        ("routing", get_routing_service),
     ):
         try:
             get_service()
