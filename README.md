@@ -1,6 +1,6 @@
 # AI Email Intelligence System
 
-> **Status:** Phase 7B of 15 (PRD phase numbering). Modular monolith, no
+> **Status:** Phase 8 of 15 (PRD phase numbering). Modular monolith, no
 > Kafka/K8s/microservices yet — deliberately, see `docs/architecture.md`.
 > Full PRD: [`project document/PRD_AI_Email_Intelligence_System.md`](project%20document/PRD_AI_Email_Intelligence_System.md).
 
@@ -10,47 +10,57 @@
 |---|---|---|
 | 1 | Problem Discovery & PRD | ✅ Done |
 | 2 | Dataset Collection & EDA | ✅ Done |
-| 3 | Spam Detection | ✅ Done — TF-IDF + calibrated SVM, 99.44% recall / 91.33% precision on held-out test |
+| 3 | Spam Detection | ✅ Done — TF-IDF + calibrated SVM, 99.44% recall / 91.33% precision on held-out test. **Phase 8 found a real precision gap outside this evaluation domain** — see the Phase 8 row below. |
 | 4 | Priority Classification | 🟡 Pipeline complete, **trained on synthetic data — not PRD-compliant**. See `docs/data_audit_priority.md`. |
 | 5 | Email Categorization | 🟡 Pipeline complete (multi-label), **trained on synthetic data — not PRD-compliant**. See `docs/data_audit_categorization.md`. |
 | 6 | Email Summarization | 🟡 Extractive (default) + abstractive (opt-in) both working, **evaluated on real but off-domain (news) data — not PRD-compliant**. See `docs/data_audit_summarization.md`. |
 | 7A | Sentiment Analysis | 🟡 Zero-shot VADER lexicon scorer served, **no human-labelled email sentiment data exists at all — unvalidated on email domain**. See `docs/data_audit_sentiment.md`. |
 | 7B | Intent Detection | 🟡 Pipeline complete (multi-label), **trained on synthetic data — not PRD-compliant**, and one class (Escalation) demonstrably unreliable, not just unvalidated. See `docs/data_audit_intent.md` / `docs/error_analysis_intent.md`. |
-| 8–15 | Routing, RAG, Auto-Reply, Dashboard, CI/CD, Cloud, MLOps | ⬜ Not started |
+| 8 | Email Routing Engine | 🟡 Deterministic rule engine composing Spam/Category/Intent/Sentiment/Priority, served and audit-logged. **Not PRD-compliant** — no routing-outcome ground truth exists, and **inherits every upstream module's data-quality caveat**. Also **discovered a new, higher-priority finding**: Spam's recall-tuned threshold over-fires on ordinary business email outside its evaluation domain, quarantining most of Phase 8's own qualitative test sample before department routing runs at all. See `docs/model_cards/routing.md` / `docs/error_analysis_routing.md`. |
+| 9–15 | RAG, Auto-Reply, Dashboard, CI/CD, Cloud, MLOps | ⬜ Not started |
 
 **Read this before trusting any priority-classification, categorization,
-summarization, sentiment, or intent metric**: Phases 4, 5, and 7B's models
-are trained on heuristically-labelled synthetic data (real Enron email
-text, fabricated labels) — no human ever annotated them. Phase 6 is
+summarization, sentiment, intent, or routing metric**: Phases 4, 5, and 7B's
+models are trained on heuristically-labelled synthetic data (real Enron
+email text, fabricated labels) — no human ever annotated them. Phase 6 is
 different in kind: its reference summaries (BBC News Summary) are
 genuinely human-written, not fabricated, but for *news articles*, not
 email — a domain/format mismatch, not a ground-truth-fabrication problem.
 Phase 7A is different again, and arguably weaker than either: the served
 sentiment model (VADER) is a zero-shot lexicon scorer that was never
 trained or fit to any dataset at all — there is no ground truth to even
-measure it against, on any domain. All failure modes are disclosed
-everywhere they matter — `docs/data_audit_priority.md` /
-`docs/data_audit_categorization.md` / `docs/data_audit_summarization.md` /
-`docs/data_audit_sentiment.md` / `docs/data_audit_intent.md`, the
-respective model cards, `docs/categorization_label_quality_report.md`,
-`docs/error_analysis_sentiment.md` / `docs/error_analysis_intent.md`, each
+measure it against, on any domain. Phase 8 is a composition layer, not a
+trained model at all — it inherits every one of the above caveats from
+its inputs, and additionally surfaced a **new** one: Spam's own real,
+validated metrics (below) turn out to hold only within its original
+evaluation domain, not on ordinary business email, which matters a great
+deal once Spam gates a downstream decision rather than standing alone. All
+failure modes are disclosed everywhere they matter —
+`docs/data_audit_priority.md` / `docs/data_audit_categorization.md` /
+`docs/data_audit_summarization.md` / `docs/data_audit_sentiment.md` /
+`docs/data_audit_intent.md`, the respective model cards,
+`docs/categorization_label_quality_report.md`,
+`docs/error_analysis_sentiment.md` / `docs/error_analysis_intent.md` /
+`docs/error_analysis_routing.md`, `docs/ml_data_maturity_roadmap.md`, each
 dataset's own `run_metadata.json` — because presenting any of these as
 real-world evidence would be actively misleading. Spam's metrics are real
-and PRD-relevant; priority's, categorization's, summarization's,
-sentiment's, and intent's are pipeline/model-validation only, not
-PRD-compliance evidence.
+and PRD-relevant *on their own evaluation domain*; priority's,
+categorization's, summarization's, sentiment's, intent's, and routing's are
+pipeline/model-validation only, not PRD-compliance evidence.
 
 ## Architecture (Completed Work)
 
 Request flow, shared ML infrastructure, and data pipeline for everything
-built so far (Phases 1–7B). Color coding matters here as much as the boxes
+built so far (Phases 1–8). Color coding matters here as much as the boxes
 do: **green is real, PRD-relevant evidence (Spam); amber is a working
 pipeline trained on fabricated synthetic labels, not yet PRD-compliant
 (Priority, Categorization, Intent); blue is evaluated against real but
 off-domain data (Summarization — human-written summaries, wrong domain);
 purple is a zero-shot model never trained or validated against any ground
-truth at all (Sentiment)** — see the "Progress" disclosure above before
-reading non-green metrics as anything more than that.
+truth at all (Sentiment); red is a composition layer that inherits every
+color above at once, not a color of its own evidence (Routing)** — see the
+"Progress" disclosure above before reading non-green metrics as anything
+more than that.
 
 ```mermaid
 flowchart TB
@@ -64,6 +74,7 @@ flowchart TB
         SummaryEP["/summarization/predict<br/>/summarization/feedback"]
         SentimentEP["/sentiment/predict<br/>/sentiment/feedback"]
         IntentEP["/intent/predict<br/>/intent/feedback"]
+        RoutingEP["/routing/predict<br/>/routing/feedback"]
     end
 
     subgraph Services["Service layer"]
@@ -73,6 +84,7 @@ flowchart TB
         SummarySvc["SummarizationService"]
         SentimentSvc["SentimentService"]
         IntentSvc["IntentService"]
+        RoutingSvc["RoutingService<br/>(rule engine, no artifact --<br/>composes the other five)"]
     end
 
     subgraph Inference["Inference — Protocol-backed backends"]
@@ -116,6 +128,7 @@ flowchart TB
         SummaryLog[("summary_logs<br/>(no source body stored)")]
         SentimentLog[("sentiment_prediction_logs")]
         IntentLog[("intent_prediction_logs<br/>(+ extracted entities)")]
+        RoutingLog[("routing_decision_logs<br/>(rules fired + all signals)")]
     end
 
     Feedback[["*_feedback.jsonl<br/>(human corrections)"]]
@@ -129,6 +142,12 @@ flowchart TB
     SummarySvc --> Grounding
     SentimentEP --> SentimentSvc --> SentimentPred
     IntentEP --> IntentSvc --> IntentPred --> IntentModel
+    RoutingEP --> RoutingSvc
+    RoutingSvc -.-> SpamSvc
+    RoutingSvc -.-> CategorySvc
+    RoutingSvc -.-> IntentSvc
+    RoutingSvc -.-> SentimentSvc
+    RoutingSvc -.-> PrioritySvc
 
     SpamSvc -.-> Preprocess
     PrioritySvc -.-> Preprocess
@@ -152,23 +171,27 @@ flowchart TB
     SummaryEP --> SummaryLog
     SentimentEP --> SentimentLog
     IntentEP --> IntentLog
+    RoutingEP --> RoutingLog
     SpamEP -.-> Feedback
     PriorityEP -.-> Feedback
     CategoryEP -.-> Feedback
     SummaryEP -.-> Feedback
     SentimentEP -.-> Feedback
     IntentEP -.-> Feedback
+    RoutingEP -.-> Feedback
 
     classDef real fill:#1b4332,stroke:#40916c,color:#fff,stroke-width:2px
     classDef synthetic fill:#7f5539,stroke:#b08968,color:#fff,stroke-width:2px
     classDef offdomain fill:#1d3d5c,stroke:#4a90c2,color:#fff,stroke-width:2px
     classDef unvalidated fill:#3c1361,stroke:#8a4fd1,color:#fff,stroke-width:2px
+    classDef composition fill:#7a1f1f,stroke:#c0392b,color:#fff,stroke-width:2px
     classDef infra fill:#1d3557,stroke:#457b9d,color:#fff
 
     class SpamEP,SpamSvc,SpamPred,SpamModel,SpamLog real
     class PriorityEP,PrioritySvc,PriorityPred,PriorityModel,PriorityLog,CategoryEP,CategorySvc,CategoryPred,CategoryModel,CategoryLog,IntentEP,IntentSvc,IntentPred,IntentModel,IntentLog,Synthetic synthetic
     class SummaryEP,SummarySvc,Extractive,Abstractive,Grounding,SummaryLog,RealOffDomain offdomain
     class SentimentEP,SentimentSvc,SentimentPred,SentimentLog unvalidated
+    class RoutingEP,RoutingSvc,RoutingLog composition
     class Preprocess,Features,Pipelines,Training,Raw infra
 ```
 
@@ -180,9 +203,15 @@ a zero-shot lexicon scorer, not a trained model, which is why
 underneath it. Intent trains through the same `Pipelines`/`Training`
 machinery as Priority/Category but deliberately does NOT connect through
 `Features` (`ContentFeatures`/`MetadataFeatures`) — it's TF-IDF-only, see
-`docs/architecture_intent.md`. Modules 8–15 (Routing, RAG, Auto-Reply,
-Dashboard, ...) aren't built yet and are deliberately left off this diagram
-rather than sketched as a guess.
+`docs/architecture_intent.md`. Routing has no `Artifacts`/`Training`
+connection either, for a different reason than Sentiment: it isn't a
+model of any kind, trained or zero-shot — `RoutingSvc` connects (dashed,
+composition, not inheritance) to all five other services' boxes instead,
+the first and only such fan-out in this diagram, and its own DB row stores
+which rules fired and every composed signal's value, not a prediction of
+its own. Modules 9–15 (RAG, Auto-Reply, Dashboard, ...) aren't built yet
+and are deliberately left off this diagram rather than sketched as a
+guess.
 
 ## What's Here
 
@@ -196,13 +225,13 @@ warm-up at startup, Dockerized local dev stack.
 engineering → baseline model comparison → calibration → served API →
 DB-backed audit logging → human-feedback endpoint):
 
-| | Spam Detection | Priority Classification | Email Categorization | Email Summarization | Sentiment Analysis | Intent Detection |
-|---|---|---|---|---|---|---|
-| Model | TF-IDF + calibrated Linear SVM | TF-IDF + engineered features + Logistic Regression | TF-IDF + engineered features + One-vs-Rest calibrated SVM (multi-label) | TextRank (extractive, default) + off-the-shelf distilbart-cnn-6-6 (abstractive, opt-in) | VADER lexicon scorer (zero-shot, no training) | TF-IDF-only + One-vs-Rest Logistic Regression (multi-label) |
-| Endpoint | `POST /api/v1/spam/predict` | `POST /api/v1/priority/predict` | `POST /api/v1/categorization/predict` | `POST /api/v1/summarization/predict` | `POST /api/v1/sentiment/predict` | `POST /api/v1/intent/predict` |
-| Feedback | `POST /api/v1/spam/feedback` | `POST /api/v1/priority/feedback` | `POST /api/v1/categorization/feedback` | `POST /api/v1/summarization/feedback` | `POST /api/v1/sentiment/feedback` | `POST /api/v1/intent/feedback` |
-| Model card | [`docs/model_cards/spam_detection.md`](docs/model_cards/spam_detection.md) | [`docs/model_cards/priority_classification.md`](docs/model_cards/priority_classification.md) | [`docs/model_cards/email_categorization.md`](docs/model_cards/email_categorization.md) | [`docs/model_cards/email_summarization.md`](docs/model_cards/email_summarization.md) | [`docs/model_cards/sentiment.md`](docs/model_cards/sentiment.md) | [`docs/model_cards/intent.md`](docs/model_cards/intent.md) |
-| Architecture | [`docs/architecture_spam_detection.md`](docs/architecture_spam_detection.md) | [`docs/architecture_priority_classification.md`](docs/architecture_priority_classification.md) | [`docs/architecture_email_categorization.md`](docs/architecture_email_categorization.md) | [`docs/architecture_email_summarization.md`](docs/architecture_email_summarization.md) | [`docs/architecture_sentiment.md`](docs/architecture_sentiment.md) | [`docs/architecture_intent.md`](docs/architecture_intent.md) |
+| | Spam Detection | Priority Classification | Email Categorization | Email Summarization | Sentiment Analysis | Intent Detection | Email Routing |
+|---|---|---|---|---|---|---|---|
+| Model | TF-IDF + calibrated Linear SVM | TF-IDF + engineered features + Logistic Regression | TF-IDF + engineered features + One-vs-Rest calibrated SVM (multi-label) | TextRank (extractive, default) + off-the-shelf distilbart-cnn-6-6 (abstractive, opt-in) | VADER lexicon scorer (zero-shot, no training) | TF-IDF-only + One-vs-Rest Logistic Regression (multi-label) | Deterministic rule engine (no trained model — composes the other five) |
+| Endpoint | `POST /api/v1/spam/predict` | `POST /api/v1/priority/predict` | `POST /api/v1/categorization/predict` | `POST /api/v1/summarization/predict` | `POST /api/v1/sentiment/predict` | `POST /api/v1/intent/predict` | `POST /api/v1/routing/predict` |
+| Feedback | `POST /api/v1/spam/feedback` | `POST /api/v1/priority/feedback` | `POST /api/v1/categorization/feedback` | `POST /api/v1/summarization/feedback` | `POST /api/v1/sentiment/feedback` | `POST /api/v1/intent/feedback` | `POST /api/v1/routing/feedback` |
+| Model card | [`docs/model_cards/spam_detection.md`](docs/model_cards/spam_detection.md) | [`docs/model_cards/priority_classification.md`](docs/model_cards/priority_classification.md) | [`docs/model_cards/email_categorization.md`](docs/model_cards/email_categorization.md) | [`docs/model_cards/email_summarization.md`](docs/model_cards/email_summarization.md) | [`docs/model_cards/sentiment.md`](docs/model_cards/sentiment.md) | [`docs/model_cards/intent.md`](docs/model_cards/intent.md) | [`docs/model_cards/routing.md`](docs/model_cards/routing.md) |
+| Architecture | [`docs/architecture_spam_detection.md`](docs/architecture_spam_detection.md) | [`docs/architecture_priority_classification.md`](docs/architecture_priority_classification.md) | [`docs/architecture_email_categorization.md`](docs/architecture_email_categorization.md) | [`docs/architecture_email_summarization.md`](docs/architecture_email_summarization.md) | [`docs/architecture_sentiment.md`](docs/architecture_sentiment.md) | [`docs/architecture_intent.md`](docs/architecture_intent.md) | [`docs/architecture_routing.md`](docs/architecture_routing.md) |
 
 The first three are swappable behind a `typing.Protocol` boundary
 (`SpamClassifierBackend` / `PriorityClassifierBackend` /
@@ -229,7 +258,22 @@ feature-schema fragility Phase 5 already caused once. Also extracts FR-35's
 entities (order IDs, dates, amounts, names) via reused/extended NLP
 utilities, independent of the classifier. One of its 9 classes
 (Escalation) was found, via qualitative testing, to be specifically
-unreliable — not just "unvalidated" — see the model card.
+unreliable — not just "unvalidated" — see the model card. Routing is the
+first module that is **not** an independent intelligence capability — it's
+a decision layer composing Spam/Category/Intent/Sentiment/Priority's
+existing outputs through a versioned, code-defined rule engine
+(`app/routing/rules.py`), deliberately not a sixth trained model (see the
+model card's "Why Not a New ML Model"). It reuses Category's own 8-label
+taxonomy as its department taxonomy (confirmed decision — see
+`docs/routing_taxonomy.md`) and treats Intent's two demonstrated-unreliable
+classes (Escalation, Refund) as evidence that can trigger human review but
+can never independently select a department (`docs/routing_conflict_
+resolution.md`). Its own qualitative evaluation surfaced a new,
+higher-priority finding beyond the four inherited synthetic-data
+caveats — Spam's recall-tuned threshold, validated on spam/ham corpora,
+over-fires on ordinary business email and quarantined most of a 20-example
+test set before department routing ran at all (`docs/error_analysis_
+routing.md`).
 
 **Data pipeline**: DVC-versioned datasets, a dataset registry that records
 domain-match/trust-level per source (so a low-quality dataset can't
@@ -238,13 +282,13 @@ ingestion, task-aware preprocessing (`EmailPreprocessor` with per-task
 configs), reusable content/metadata feature extractors
 (`app/feature_engineering/`).
 
-**Testing**: 214 tests (+1 opt-in slow integration test, `RUN_SLOW_TESTS=1`)
+**Testing**: 265 tests (+1 opt-in slow integration test, `RUN_SLOW_TESTS=1`)
 across data validation, model behavior, API contracts, security, and DB
 persistence — `pytest`, `pytest-asyncio`, `aiosqlite` for DB tests without
 a live Postgres. Migrations are additionally verified against a real,
 disposable PostgreSQL 16 container (not just SQLite) whenever the schema
-changes — see `docs/architecture_sentiment.md` "Database" for the most
-recent example.
+changes — see `docs/architecture_routing.md` "Database" for the most
+recent example (upgrade → downgrade → upgrade round-trip).
 
 ## Quickstart
 
@@ -291,7 +335,12 @@ Sentiment likewise has no *served* trained artifact — `train_sentiment_model.p
 produces a comparison-only artifact (`artifacts/sentiment_comparison.joblib`)
 that `SentimentService` never loads; the actually-served
 `VaderSentimentPredictor` needs no training step at all, just
-`pip install -r requirements.txt`.
+`pip install -r requirements.txt`. Routing has no trained artifact at all,
+served or otherwise — it's a rule engine, not a model — but it does depend
+transitively on Spam/Priority/Category/Intent's four artifacts above being
+present; run `PYTHONPATH=. python scripts/qualitative_eval_routing.py` for
+this phase's own 20-example qualitative check
+(`docs/error_analysis_routing.md`).
 
 **Troubleshooting**: if you already have Postgres installed natively on this
 machine, it's probably also listening on port 5432 — see the comment above
@@ -304,7 +353,7 @@ around it (map to a different host port, e.g. `5433:5432`, and set
 ```
 backend/
 ├── app/
-│   ├── api/v1/endpoints/       # spam.py, priority.py, category.py, summarization.py, sentiment.py, intent.py, health.py
+│   ├── api/v1/endpoints/       # spam.py, priority.py, category.py, summarization.py, sentiment.py, intent.py, routing.py, health.py
 │   ├── core/                    # config, logging — cross-cutting
 │   ├── data_ingestion/          # corpus loaders + dataset_registry.py
 │   ├── database/                # async session, repositories/
@@ -312,16 +361,17 @@ backend/
 │   ├── feature_engineering/     # content/metadata feature extractors, keyword lexicons, feature_schema
 │   ├── inference/                # SpamPredictor/PriorityPredictor/CategoryPredictor/VaderSentimentPredictor/IntentPredictor + Protocol backends
 │   ├── middleware/               # request logging, global error handling
-│   ├── models/                   # SQLAlchemy ORM (*_prediction_log.py, summary_log.py)
+│   ├── models/                   # SQLAlchemy ORM (*_prediction_log.py, summary_log.py, routing_decision_log.py)
 │   ├── nlp/                       # extractive/abstractive summarizers, grounding, thread, chunking, intent_entities — generation/extraction, not classification
 │   ├── pipeline/                  # PipelineConfig/Factory, MLPipeline, PriorityMLPipeline, CategoryMLPipeline, IntentMLPipeline
 │   ├── preprocessing/             # EmailPreprocessor + task-specific configs
+│   ├── routing/                   # Module 8 pure logic: rules.py, keyword_matcher.py, department_taxonomy.py, sender_domain.py, signal_reliability.py — no service dependency, independently testable
 │   ├── schemas/                   # Pydantic request/response contracts
-│   ├── services/                  # spam/priority/category/summarization/sentiment/intent_service, feedback_service
+│   ├── services/                  # spam/priority/category/summarization/sentiment/intent/routing_service, feedback_service
 │   ├── training/                  # Trainer, ArtifactManager
 │   └── main.py                    # app factory + startup warm-up
 ├── alembic/                        # DB migrations
-├── scripts/                        # training + dataset generation scripts + DB-hang investigation scripts + qualitative_eval_sentiment.py / qualitative_eval_intent.py
+├── scripts/                        # training + dataset generation scripts + DB-hang investigation scripts + qualitative_eval_sentiment.py / qualitative_eval_intent.py / qualitative_eval_routing.py
 ├── tests/
 ├── requirements.txt
 └── requirements-dev.txt
@@ -337,6 +387,7 @@ docs/
 ├── architecture_email_summarization.md
 ├── architecture_sentiment.md
 ├── architecture_intent.md
+├── architecture_routing.md
 ├── data_audit_priority.md              # data strategy decision — read before priority's model card
 ├── data_audit_categorization.md        # data strategy decision — read before categorization's model card
 ├── data_audit_summarization.md         # data strategy decision — read before summarization's model card
@@ -349,9 +400,16 @@ docs/
 ├── categorization_label_quality_report.md
 ├── error_analysis_sentiment.md
 ├── error_analysis_intent.md
+├── error_analysis_routing.md
+├── routing_taxonomy.md
+├── routing_signal_reliability.md
+├── routing_conflict_resolution.md
+├── routing_rules.md
+├── ml_data_maturity_roadmap.md         # Track B — data-quality roadmap for all 5 ML-backed modules Routing composes
 ├── phase6_requirements_traceability.md
 ├── phase7a_requirements_traceability.md
 ├── phase7b_intent_requirements_traceability.md
+├── phase8_requirements_traceability.md
 ├── technical_debt/
 │   └── database_write_hang.md          # investigated, mitigated, NOT root-caused — read before assuming DB writes can't hang
 ├── model_cards/
@@ -383,6 +441,14 @@ project document/
 - [`docs/error_analysis_intent.md`](docs/error_analysis_intent.md) — qualitative failure-pattern analysis (21% match on 14 hand-written examples) — found and root-caused a specific reliability failure in the Escalation class (fires on unrelated text AND misses its own target case), stronger evidence than a generic synthetic-data disclaimer.
 - [`docs/phase7b_intent_requirements_traceability.md`](docs/phase7b_intent_requirements_traceability.md) — FR-33 to FR-36 extracted directly from the PRD, mapped to design/implementation/test/evidence.
 - [`docs/architecture_intent.md`](docs/architecture_intent.md) / [`docs/model_cards/intent.md`](docs/model_cards/intent.md)
+- [`docs/routing_signal_reliability.md`](docs/routing_signal_reliability.md) — per-signal evidence table for everything Routing composes (Spam/Category/Priority/Sentiment/Intent/Keywords/Sender-domain). Read this before trusting any routing decision.
+- [`docs/routing_taxonomy.md`](docs/routing_taxonomy.md) — the confirmed decision to reuse Category's 8-label taxonomy as departments, and the disclosed consequence (PRD §3.2's "Operations"/"Management" have no supporting signal).
+- [`docs/routing_conflict_resolution.md`](docs/routing_conflict_resolution.md) — precedence hierarchy, tie-breaking, and the unreliable-Intent (Escalation/Refund) policy in full.
+- [`docs/routing_rules.md`](docs/routing_rules.md) — the complete rule catalogue (`routing_rules_v1`) and keyword engine, plus why routing rules are versioned code, not a DB-backed CRUD API.
+- [`docs/error_analysis_routing.md`](docs/error_analysis_routing.md) — qualitative evaluation (20 hand-written examples) that surfaced a real, higher-priority finding: Spam's recall-tuned threshold over-fires on ordinary business email outside its evaluation domain, quarantining 13/20 examples before department routing ran.
+- [`docs/phase8_requirements_traceability.md`](docs/phase8_requirements_traceability.md) — FR-37 to FR-42 extracted directly from the PRD, mapped to design/implementation/test/evidence.
+- [`docs/architecture_routing.md`](docs/architecture_routing.md) / [`docs/model_cards/routing.md`](docs/model_cards/routing.md)
+- [`docs/ml_data_maturity_roadmap.md`](docs/ml_data_maturity_roadmap.md) — Track B: the data-quality replacement roadmap for Priority/Categorization/Intent/Sentiment **and** the newly-discovered Spam domain-transfer gap, kept explicitly separate from Phase 8's own (complete) Track A engineering implementation.
 - [`docs/technical_debt/database_write_hang.md`](docs/technical_debt/database_write_hang.md) — a real, reproduced DB-write hang under the live Windows request path; seven isolation experiments ruled out asyncpg, bare asyncio, SQLAlchemy alone, and `BaseHTTPMiddleware` as the sole cause; root cause still not found. Mitigated (bounded, not eliminated), not solved — read before assuming a DB timeout in this codebase can't still hang.
 - [`docs/git_workflow.md`](docs/git_workflow.md) — branching, commit conventions.
 
@@ -404,18 +470,32 @@ project document/
 - **Intent Detection's "Escalation" class is empirically unreliable, not just unvalidated** — fires on unrelated text (a contract request, an order-status question, a scheduling email) AND fails to fire on the one example written specifically to trigger it. Root-caused to Escalation's extreme rarity (4.41% of the synthetic training set) combined with `class_weight="balanced"` amplifying a thin, noisy signal. See `docs/error_analysis_intent.md` and `docs/model_cards/intent.md`.
 - **Intent's "Refund" class was never correctly predicted on the test set at all (F1 = 0.0)** — the weakest single-class result of any classifier shipped in this project so far. See `docs/model_cards/intent.md`.
 - Intent detection is trained on `intent_synthetic_v1` (Enron + keyword-heuristic multi-label bootstrap, same pattern as priority/category) — **not PRD-compliant**, and several of FR-33's classes (Order/Refund/Cancel) are consumer-transactional concepts largely absent from Enron's internal B2B correspondence, a domain mismatch disclosed as worse than priority/category's. See `docs/data_audit_intent.md`.
-- FR-36 (intent feeding routing and auto-reply) is explicitly deferred — those consumer modules (Phase 8 Routing, a later Auto-Reply phase) don't exist yet.
+- FR-36 (intent feeding routing) is now implemented, with restrictions — Escalation/Refund can trigger human review when corroborated but never independently select a department; auto-reply consumption still doesn't exist (a later phase). See `docs/routing_conflict_resolution.md`.
+- **Routing (Phase 8) inherits every one of the above caveats** — it cannot be more trustworthy than its least trustworthy input signal. See `docs/routing_signal_reliability.md`.
+- **Newly discovered during Phase 8: Spam's recall-tuned 0.06 threshold, validated on spam/ham corpora (SpamAssassin/SMS Spam/Amazon), over-fires on ordinary business email** — a sales inquiry, a billing request, an HR complaint, and an IT access request all scored above threshold in a 20-example qualitative check, quarantining 13/20 examples before department routing ran at all. Not fixed this phase (recalibrating Phase 3's threshold needs its own out-of-domain validation data, which doesn't exist yet). See `docs/error_analysis_routing.md` and `docs/ml_data_maturity_roadmap.md`.
+- FR-39's literal `/routing/rules` CRUD API and FR-42's agent-level round-robin/skills-based routing are both unimplemented — the former because building unauthenticated write access to live routing logic would be worse than not having it (no auth/multi-tenancy exists yet), the latter because no `users`/`agents` table exists anywhere in this codebase. See `docs/routing_taxonomy.md` and `docs/routing_rules.md`.
+- FR-41's "adjust rule weights" from feedback is deliberately not implemented — feedback is captured but never auto-applied, the same stance every other module's feedback path takes. See `docs/routing_conflict_resolution.md`.
+- No routing-outcome ground truth exists — "Routing Accuracy > 92%" (PRD §14.1) is not measured and cannot be, honestly, until a real annotated routing-outcome dataset exists. See `docs/model_cards/routing.md` "Evaluation."
 
-## Next (Phase 8)
+## Next (Phase 9)
 
-Email Routing Engine (Module 8 — FR-37 to FR-40), which per FR-38 combines
-category + intent + sentiment + keyword + sender-domain signals — the
-first module that actually composes Priority/Category/Sentiment/Intent's
-outputs rather than adding a new independent one. Given three of those
-four inputs (Priority, Category, Intent) carry a synthetic-data caveat and
-one (Sentiment) is entirely unvalidated, Routing's own output will need to
-inherit and clearly restate all of those caveats, not present a
-composed decision as more trustworthy than its least trustworthy input.
-Otherwise still blocked on the annotation effort above before more ML
-modules compound the same data problem. See each module's architecture doc
-for its own "Known Gaps" section for smaller, unblocked follow-ups.
+Similar Email Retrieval / RAG Foundation (Module 9 — FR-43 to FR-47):
+semantic embeddings for every processed email, top-5 similarity search,
+filterable by category/department/resolution-status. This is the first
+module that needs genuinely new infrastructure this codebase doesn't have
+at all yet — a vector index (PRD §12.2 names ChromaDB for dev, Pinecone for
+prod; `docs/architecture.md`'s Phase 1 decision explicitly deferred this
+"no embeddings being generated yet") — not just new business logic over
+existing infrastructure the way Routing was. Before starting, worth
+explicitly deciding (the same way Phase 8 did for its own department
+taxonomy and rules-storage questions) which embedding model, which vector
+store, and how "resolution status" — a field nothing in this codebase
+currently tracks anywhere, `email_classifications`/`emails` tables included
+— gets populated, rather than assuming an answer. Still blocked, same as
+every phase since 4, on the annotation effort above before more ML modules
+compound the same data problem; Routing's own newly-discovered Spam
+domain-transfer gap (`docs/error_analysis_routing.md`) is arguably the more
+urgent near-term fix, being both smaller in scope than a full annotation
+effort and the one gap actively suppressing a downstream module's (Phase
+8's) usefulness today. See each module's architecture doc for its own
+"Known Gaps" section for smaller, unblocked follow-ups.
