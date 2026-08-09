@@ -154,6 +154,46 @@ class FeedbackLogger:
 
         return feedback_id
 
+    def log_retrieval_feedback(
+        self,
+        query_subject: str,
+        query_body: str,
+        result_email_id: str | None,
+        useful: bool,
+        comment: str | None = None,
+    ) -> str:
+        """
+        Retrieval's feedback shape (a query + which result + a relevance
+        judgment) doesn't fit log_correction's predicted/corrected-label
+        shape any more than routing's or summarization's did -- a parallel
+        method, same as those two, writing to the same per-module JSONL
+        file.
+
+        Step 31/RULE (Phase 9 brief): this ONLY records feedback. Nothing
+        in this codebase auto-retrains embeddings or adjusts vector-store
+        weights from a feedback file -- promoting relevance judgments into
+        actual training data (e.g. a future fine-tuned retriever) would be
+        a separate, explicit, human-reviewed step, same stance every other
+        module's feedback path already takes.
+        """
+        feedback_id = str(uuid.uuid4())
+
+        record = {
+            "feedback_id": feedback_id,
+            "module": self.module,
+            "query_subject": query_subject,
+            "query_body": query_body,
+            "result_email_id": result_email_id,
+            "useful": useful,
+            "comment": comment,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+
+        return feedback_id
+
 
 def get_feedback_logger() -> FeedbackLogger:
     return FeedbackLogger()
@@ -181,3 +221,7 @@ def get_intent_feedback_logger() -> FeedbackLogger:
 
 def get_routing_feedback_logger() -> FeedbackLogger:
     return FeedbackLogger(module="routing")
+
+
+def get_retrieval_feedback_logger() -> FeedbackLogger:
+    return FeedbackLogger(module="retrieval")
