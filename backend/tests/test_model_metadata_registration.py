@@ -20,6 +20,7 @@ EXPECTED_TABLES = {
     "summary_logs",
     "sentiment_prediction_logs",
     "intent_prediction_logs",
+    "routing_decision_logs",
 }
 
 
@@ -34,6 +35,7 @@ def test_models_dunder_all_matches_the_actual_registered_models():
         "CategoryPredictionLog",
         "IntentPredictionLog",
         "PriorityPredictionLog",
+        "RoutingDecisionLog",
         "SentimentPredictionLog",
         "SpamPredictionLog",
         "SummaryLog",
