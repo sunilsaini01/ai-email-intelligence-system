@@ -11,6 +11,29 @@ Why a factory function (create_app) instead of a module-level `app = FastAPI()`:
 import logging
 from contextlib import asynccontextmanager
 
+# Import-order workaround (Phase 9): `sklearn` and `pandas` are imported
+# directly and FIRST among this file's real dependencies -- before
+# `app.api.v1.router` below, which is what transitively imports both
+# `transformers` (Module 6, summarization) and this project's retrieval
+# code (Module 9). Reason, verified by direct reproduction (see
+# docs/error_analysis_retrieval.md for the exact repro commands): once
+# Module 9's `retrieval` endpoint entered the router's import sweep
+# alongside `summarization`, the combination of `transformers`' lazy-module
+# `__getattr__` resolving a `sklearn`/`pandas`/`pyarrow` import for the
+# FIRST time triggers a Windows-specific fault in this exact dependency-
+# version combination -- an access violation in `pyarrow` before this fix,
+# a stack overflow in a circular lazy-import chain after a first, partial
+# fix (making app/security/pii_anonymizer.py's Presidio engines lazy,
+# still correct and kept, but insufficient alone). Forcing `sklearn`/
+# `pandas` into `sys.modules` before `transformers` ever gets a chance to
+# trigger that resolution path itself sidesteps the fault entirely --
+# confirmed empirically, not merely theorized. This is an environment/
+# dependency-version workaround, not an application concern; revisit if
+# `transformers`/`scikit-learn`/`pandas`/`pyarrow` are ever upgraded
+# together and this comment's reproduction no longer applies.
+import pandas  # noqa: F401,E402
+import sklearn  # noqa: F401,E402
+
 from fastapi import FastAPI
 
 from app.api.v1.router import api_router
@@ -21,6 +44,7 @@ from app.middleware.request_logging import RequestLoggingMiddleware
 from app.services.category_service import get_category_service
 from app.services.intent_service import get_intent_service
 from app.services.priority_service import get_priority_service
+from app.services.retrieval_service import get_retrieval_service
 from app.services.routing_service import get_routing_service
 from app.services.sentiment_service import get_sentiment_service
 from app.services.spam_service import get_spam_service
@@ -91,6 +115,19 @@ async def lifespan(app: FastAPI):
             logger.info(f"{name}_service_warmed_up")
         except Exception:
             logger.warning(f"{name}_service_warmup_failed", exc_info=True)
+
+    # retrieval: RetrievalService itself is lazy like RoutingService (same
+    # per-signal-failure-isolation reasoning), so get_retrieval_service()
+    # alone warms up nothing. Unlike routing, this one's worth forcing
+    # further: the default embedder (TfidfEmbedder) loads a real artifact
+    # (artifacts/tfidf_embedder.joblib) whose cost belongs at startup, not
+    # a live caller's first /retrieval/index or /retrieval/search request
+    # — same reasoning as every classifier service above.
+    try:
+        get_retrieval_service()._resolve_embedder()  # noqa: SLF001 -- warmup-only internal reach
+        logger.info("retrieval_service_warmed_up")
+    except Exception:
+        logger.warning("retrieval_service_warmup_failed", exc_info=True)
 
     yield
 
