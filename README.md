@@ -1,6 +1,6 @@
 # AI Email Intelligence System
 
-> **Status:** Phase 8 of 15 (PRD phase numbering). Modular monolith, no
+> **Status:** Phase 9 of 15 (PRD phase numbering). Modular monolith, no
 > Kafka/K8s/microservices yet — deliberately, see `docs/architecture.md`.
 > Full PRD: [`project document/PRD_AI_Email_Intelligence_System.md`](project%20document/PRD_AI_Email_Intelligence_System.md).
 
@@ -17,7 +17,8 @@
 | 7A | Sentiment Analysis | 🟡 Zero-shot VADER lexicon scorer served, **no human-labelled email sentiment data exists at all — unvalidated on email domain**. See `docs/data_audit_sentiment.md`. |
 | 7B | Intent Detection | 🟡 Pipeline complete (multi-label), **trained on synthetic data — not PRD-compliant**, and one class (Escalation) demonstrably unreliable, not just unvalidated. See `docs/data_audit_intent.md` / `docs/error_analysis_intent.md`. |
 | 8 | Email Routing Engine | 🟡 Deterministic rule engine composing Spam/Category/Intent/Sentiment/Priority, served and audit-logged. **Not PRD-compliant** — no routing-outcome ground truth exists, and **inherits every upstream module's data-quality caveat**. Also **discovered a new, higher-priority finding**: Spam's recall-tuned threshold over-fires on ordinary business email outside its evaluation domain, quarantining most of Phase 8's own qualitative test sample before department routing runs at all. See `docs/model_cards/routing.md` / `docs/error_analysis_routing.md`. |
-| 9–15 | RAG, Auto-Reply, Dashboard, CI/CD, Cloud, MLOps | ⬜ Not started |
+| 9 | Similar Email Retrieval / RAG Foundation | 🟡 Vector similarity search (ChromaDB, local) over PII-scrubbed embeddings, metadata-filterable by category/department/resolution-status, served and audit-logged. **New infrastructure**: this project's first canonical cross-module email entity, and its first wired-in PII anonymization. **Not PRD-compliant** — no retrieval-outcome ground truth exists. Two real bugs found and fixed during this phase's own testing: a TF-IDF vocabulary-pollution bug (all-zero similarity scores) and a Windows-specific import-order crash that segfaulted the *entire* test suite. See `docs/model_cards/embedding_retrieval.md` / `docs/error_analysis_retrieval.md`. |
+| 10–15 | Auto-Reply, Dashboard, CI/CD, Cloud, MLOps | ⬜ Not started |
 
 **Read this before trusting any priority-classification, categorization,
 summarization, sentiment, intent, or routing metric**: Phases 4, 5, and 7B's
@@ -41,12 +42,16 @@ failure modes are disclosed everywhere they matter —
 `docs/data_audit_intent.md`, the respective model cards,
 `docs/categorization_label_quality_report.md`,
 `docs/error_analysis_sentiment.md` / `docs/error_analysis_intent.md` /
-`docs/error_analysis_routing.md`, `docs/ml_data_maturity_roadmap.md`, each
-dataset's own `run_metadata.json` — because presenting any of these as
-real-world evidence would be actively misleading. Spam's metrics are real
-and PRD-relevant *on their own evaluation domain*; priority's,
-categorization's, summarization's, sentiment's, intent's, and routing's are
-pipeline/model-validation only, not PRD-compliance evidence.
+`docs/error_analysis_routing.md` / `docs/error_analysis_retrieval.md`,
+`docs/ml_data_maturity_roadmap.md`, each dataset's own `run_metadata.json`
+— because presenting any of these as real-world evidence would be
+actively misleading. Spam's metrics are real and PRD-relevant *on their
+own evaluation domain*; priority's, categorization's, summarization's,
+sentiment's, intent's, routing's, and retrieval's are pipeline/model-
+validation only, not PRD-compliance evidence. Retrieval (Phase 9) has no
+label-fabrication problem of its own (embedding fitting is unsupervised)
+but has no relevance-outcome ground truth either — a different, but
+equally real, evidentiary gap.
 
 ## Architecture (Completed Work)
 
@@ -282,12 +287,13 @@ ingestion, task-aware preprocessing (`EmailPreprocessor` with per-task
 configs), reusable content/metadata feature extractors
 (`app/feature_engineering/`).
 
-**Testing**: 265 tests (+1 opt-in slow integration test, `RUN_SLOW_TESTS=1`)
+**Testing**: 327 tests (+1 opt-in slow integration test, `RUN_SLOW_TESTS=1`)
 across data validation, model behavior, API contracts, security, and DB
 persistence — `pytest`, `pytest-asyncio`, `aiosqlite` for DB tests without
 a live Postgres. Migrations are additionally verified against a real,
 disposable PostgreSQL 16 container (not just SQLite) whenever the schema
-changes — see `docs/architecture_routing.md` "Database" for the most
+changes — see `docs/architecture_rag.md` "Performance" and
+`docs/vector_index_consistency.md` for the most
 recent example (upgrade → downgrade → upgrade round-trip).
 
 ## Quickstart
@@ -353,25 +359,27 @@ around it (map to a different host port, e.g. `5433:5432`, and set
 ```
 backend/
 ├── app/
-│   ├── api/v1/endpoints/       # spam.py, priority.py, category.py, summarization.py, sentiment.py, intent.py, routing.py, health.py
+│   ├── api/v1/endpoints/       # spam.py, priority.py, category.py, summarization.py, sentiment.py, intent.py, routing.py, retrieval.py, health.py
 │   ├── core/                    # config, logging — cross-cutting
 │   ├── data_ingestion/          # corpus loaders + dataset_registry.py
 │   ├── database/                # async session, repositories/
 │   ├── evaluation/              # model_evaluator (classification) + summarization_evaluator (ROUGE)
 │   ├── feature_engineering/     # content/metadata feature extractors, keyword lexicons, feature_schema
-│   ├── inference/                # SpamPredictor/PriorityPredictor/CategoryPredictor/VaderSentimentPredictor/IntentPredictor + Protocol backends
+│   ├── inference/                # SpamPredictor/PriorityPredictor/CategoryPredictor/VaderSentimentPredictor/IntentPredictor/TfidfEmbedder/MiniLmEmbedder + Protocol backends
 │   ├── middleware/               # request logging, global error handling
-│   ├── models/                   # SQLAlchemy ORM (*_prediction_log.py, summary_log.py, routing_decision_log.py)
+│   ├── models/                   # SQLAlchemy ORM (*_prediction_log.py, summary_log.py, routing_decision_log.py, email_record.py)
 │   ├── nlp/                       # extractive/abstractive summarizers, grounding, thread, chunking, intent_entities — generation/extraction, not classification
 │   ├── pipeline/                  # PipelineConfig/Factory, MLPipeline, PriorityMLPipeline, CategoryMLPipeline, IntentMLPipeline
 │   ├── preprocessing/             # EmailPreprocessor + task-specific configs
+│   ├── retrieval/                 # Module 9 pure logic: identity.py, embedding_input.py, vector_store.py (+ InMemory fake), chroma_vector_store.py, resolution_status.py, tenant.py — no service dependency, independently testable
 │   ├── routing/                   # Module 8 pure logic: rules.py, keyword_matcher.py, department_taxonomy.py, sender_domain.py, signal_reliability.py — no service dependency, independently testable
 │   ├── schemas/                   # Pydantic request/response contracts
-│   ├── services/                  # spam/priority/category/summarization/sentiment/intent/routing_service, feedback_service
+│   ├── security/                  # pii_anonymizer.py (Presidio-backed, lazy-loaded — wired in by Module 9, dormant since early in this project before that)
+│   ├── services/                  # spam/priority/category/summarization/sentiment/intent/routing/retrieval_service, feedback_service
 │   ├── training/                  # Trainer, ArtifactManager
-│   └── main.py                    # app factory + startup warm-up
+│   └── main.py                    # app factory + startup warm-up (also: a documented sklearn/pandas import-order workaround — see docs/error_analysis_retrieval.md "Incident 2")
 ├── alembic/                        # DB migrations
-├── scripts/                        # training + dataset generation scripts + DB-hang investigation scripts + qualitative_eval_sentiment.py / qualitative_eval_intent.py / qualitative_eval_routing.py
+├── scripts/                        # training + dataset generation scripts + DB-hang investigation scripts + qualitative_eval_sentiment.py / qualitative_eval_intent.py / qualitative_eval_routing.py / qualitative_eval_retrieval.py / benchmark_embedding_models.py
 ├── tests/
 ├── requirements.txt
 └── requirements-dev.txt
@@ -388,6 +396,7 @@ docs/
 ├── architecture_sentiment.md
 ├── architecture_intent.md
 ├── architecture_routing.md
+├── architecture_rag.md
 ├── data_audit_priority.md              # data strategy decision — read before priority's model card
 ├── data_audit_categorization.md        # data strategy decision — read before categorization's model card
 ├── data_audit_summarization.md         # data strategy decision — read before summarization's model card
@@ -401,15 +410,26 @@ docs/
 ├── error_analysis_sentiment.md
 ├── error_analysis_intent.md
 ├── error_analysis_routing.md
+├── error_analysis_retrieval.md
 ├── routing_taxonomy.md
 ├── routing_signal_reliability.md
 ├── routing_conflict_resolution.md
 ├── routing_rules.md
+├── email_identity_and_deduplication.md
+├── resolution_status_design.md
+├── vector_tenant_isolation.md
+├── phase9_pii_embedding_strategy.md
+├── embedding_input_strategy.md
+├── embedding_model_decision.md
+├── vector_store_decision.md
+├── embedding_versioning.md
+├── vector_index_consistency.md
 ├── ml_data_maturity_roadmap.md         # Track B — data-quality roadmap for all 5 ML-backed modules Routing composes
 ├── phase6_requirements_traceability.md
 ├── phase7a_requirements_traceability.md
 ├── phase7b_intent_requirements_traceability.md
 ├── phase8_requirements_traceability.md
+├── phase9_requirements_traceability.md
 ├── technical_debt/
 │   └── database_write_hang.md          # investigated, mitigated, NOT root-caused — read before assuming DB writes can't hang
 ├── model_cards/
@@ -449,6 +469,17 @@ project document/
 - [`docs/phase8_requirements_traceability.md`](docs/phase8_requirements_traceability.md) — FR-37 to FR-42 extracted directly from the PRD, mapped to design/implementation/test/evidence.
 - [`docs/architecture_routing.md`](docs/architecture_routing.md) / [`docs/model_cards/routing.md`](docs/model_cards/routing.md)
 - [`docs/ml_data_maturity_roadmap.md`](docs/ml_data_maturity_roadmap.md) — Track B: the data-quality replacement roadmap for Priority/Categorization/Intent/Sentiment **and** the newly-discovered Spam domain-transfer gap, kept explicitly separate from Phase 8's own (complete) Track A engineering implementation.
+- [`docs/email_identity_and_deduplication.md`](docs/email_identity_and_deduplication.md) — why content-hash (not Message-ID, which doesn't exist anywhere in this system) is the canonical email identity, and exactly what idempotent re-indexing does and doesn't handle (forwarded emails are NOT deduplicated).
+- [`docs/resolution_status_design.md`](docs/resolution_status_design.md) — the invented, minimal 4-state resolution taxonomy (the PRD names the filter but never defines its values), and why it's never auto-transitioned.
+- [`docs/vector_tenant_isolation.md`](docs/vector_tenant_isolation.md) — the confirmed decision (Option C): structural tenant-metadata isolation now, real authentication still deferred since Phase 1.
+- [`docs/phase9_pii_embedding_strategy.md`](docs/phase9_pii_embedding_strategy.md) — why only the text going INTO the vector store is PII-anonymized (Presidio), while Postgres storage stays raw like every other module — and why that split, not "anonymize everything," is the right line.
+- [`docs/embedding_input_strategy.md`](docs/embedding_input_strategy.md) — what exactly gets embedded (subject + body, cleaned, nothing else) and why no field-weighting scheme was built.
+- [`docs/embedding_model_decision.md`](docs/embedding_model_decision.md) — the measured TF-IDF vs. all-MiniLM-L6-v2 comparison (MiniLM correctly separated 6/6 paraphrase pairs, TF-IDF only 3/6, with literal zero-overlap scores on the misses) — and why TF-IDF still ships as the default anyway (zero network dependency, deterministic tests), a disclosed trade-off, not a hidden one.
+- [`docs/vector_store_decision.md`](docs/vector_store_decision.md) — ChromaDB vs. Pinecone/FAISS/Qdrant, the `VectorStore` Protocol abstraction, and why cosine similarity was explicitly configured rather than left at Chroma's default.
+- [`docs/embedding_versioning.md`](docs/embedding_versioning.md) / [`docs/vector_index_consistency.md`](docs/vector_index_consistency.md) — how embedding-model upgrades and Postgres/vector-store consistency (including soft-delete) are handled without Kafka or an outbox pattern.
+- [`docs/error_analysis_retrieval.md`](docs/error_analysis_retrieval.md) — two real engineering incidents found and fixed during this phase's own testing (a TF-IDF vocabulary-pollution bug producing all-zero similarity scores, and a Windows-specific import-order crash that segfaulted the entire test suite), plus the qualitative retrieval gold-set results.
+- [`docs/phase9_requirements_traceability.md`](docs/phase9_requirements_traceability.md) — FR-43 to FR-47 extracted directly from the PRD, mapped to design/implementation/test/evidence.
+- [`docs/architecture_rag.md`](docs/architecture_rag.md) / [`docs/model_cards/embedding_retrieval.md`](docs/model_cards/embedding_retrieval.md)
 - [`docs/technical_debt/database_write_hang.md`](docs/technical_debt/database_write_hang.md) — a real, reproduced DB-write hang under the live Windows request path; seven isolation experiments ruled out asyncpg, bare asyncio, SQLAlchemy alone, and `BaseHTTPMiddleware` as the sole cause; root cause still not found. Mitigated (bounded, not eliminated), not solved — read before assuming a DB timeout in this codebase can't still hang.
 - [`docs/git_workflow.md`](docs/git_workflow.md) — branching, commit conventions.
 
@@ -476,26 +507,44 @@ project document/
 - FR-39's literal `/routing/rules` CRUD API and FR-42's agent-level round-robin/skills-based routing are both unimplemented — the former because building unauthenticated write access to live routing logic would be worse than not having it (no auth/multi-tenancy exists yet), the latter because no `users`/`agents` table exists anywhere in this codebase. See `docs/routing_taxonomy.md` and `docs/routing_rules.md`.
 - FR-41's "adjust rule weights" from feedback is deliberately not implemented — feedback is captured but never auto-applied, the same stance every other module's feedback path takes. See `docs/routing_conflict_resolution.md`.
 - No routing-outcome ground truth exists — "Routing Accuracy > 92%" (PRD §14.1) is not measured and cannot be, honestly, until a real annotated routing-outcome dataset exists. See `docs/model_cards/routing.md` "Evaluation."
+- **No retrieval-outcome ground truth exists** — same class of gap as routing, but retrieval's embedding *fitting* itself is unsupervised (no labels used at all), a genuinely different, better evidentiary position than Priority/Category/Intent's fabricated-label problem. See `docs/model_cards/embedding_retrieval.md`.
+- **Two real bugs were found and fixed during Phase 9's own testing**: a TF-IDF vocabulary-pollution bug (the fitted embedder's vocabulary was dominated by HTML fragments and mailing-list noise; every similarity score came back exactly 0.0 before the fix), and a Windows-specific import-order crash between `transformers`/`scikit-learn`/`pandas`/`pyarrow` that segfaulted the *entire* test suite, not just Phase 9's own tests. Both fixed and verified; see `docs/error_analysis_retrieval.md`.
+- **TF-IDF ships as retrieval's default embedder despite a demonstrated quality gap** — a measured comparison found it structurally blind to paraphrase (3/6 vs. MiniLM's 6/6 on hand-written pairs, with literal zero-overlap scores on the misses). Kept as the default for zero-network-dependency and test-suite determinism, not because it's better — a disclosed trade-off flagged for reconsideration in Phase 10. See `docs/embedding_model_decision.md`.
+- Retrieval indexing is not auto-triggered after Spam/Category/Routing predictions — FR-43's "every processed email" is a capability this phase built, not an automatic behavior wired into the existing pipeline yet. See `docs/architecture_rag.md` "Not Auto-Wired to Upstream Endpoints."
+- No real tenant authentication exists for retrieval (same gap as everywhere else in this codebase since Phase 1) — cross-tenant isolation is structural (the code cannot search across organizations even by omission) but not access-controlled. See `docs/vector_tenant_isolation.md`.
+- Resolution status (FR-46) is an invented, minimal 4-state taxonomy — the PRD names the filter requirement but never defines its possible values anywhere. See `docs/resolution_status_design.md`.
 
-## Next (Phase 9)
+## Next (Phase 10)
 
-Similar Email Retrieval / RAG Foundation (Module 9 — FR-43 to FR-47):
-semantic embeddings for every processed email, top-5 similarity search,
-filterable by category/department/resolution-status. This is the first
-module that needs genuinely new infrastructure this codebase doesn't have
-at all yet — a vector index (PRD §12.2 names ChromaDB for dev, Pinecone for
-prod; `docs/architecture.md`'s Phase 1 decision explicitly deferred this
-"no embeddings being generated yet") — not just new business logic over
-existing infrastructure the way Routing was. Before starting, worth
-explicitly deciding (the same way Phase 8 did for its own department
-taxonomy and rules-storage questions) which embedding model, which vector
-store, and how "resolution status" — a field nothing in this codebase
-currently tracks anywhere, `email_classifications`/`emails` tables included
-— gets populated, rather than assuming an answer. Still blocked, same as
-every phase since 4, on the annotation effort above before more ML modules
-compound the same data problem; Routing's own newly-discovered Spam
-domain-transfer gap (`docs/error_analysis_routing.md`) is arguably the more
-urgent near-term fix, being both smaller in scope than a full annotation
-effort and the one gap actively suppressing a downstream module's (Phase
-8's) usefulness today. See each module's architecture doc for its own
-"Known Gaps" section for smaller, unblocked follow-ups.
+Auto Reply Generation (Module 10 — FR-48 to FR-51): generate a draft reply
+using an email plus its top-3 similar resolved emails (now buildable on
+top of Phase 9's retrieval — RAG context has somewhere to come from for
+the first time), draft-only by default (FR-49, never auto-sent), a 10s
+generation budget (FR-50), and an agent approve/edit/reject flow (FR-51).
+
+**This is the first phase that plausibly needs a real external LLM API**
+(the PRD names GPT-4o/Claude, with an Ollama local fallback already
+flagged in its own risk table) — flag this explicitly before any
+implementation begins, the same way Phase 9 flagged that it needed none.
+Unlike every phase so far, "no paid API required" may not be achievable
+here without a materially worse feature (a local-only open-weight model
+generating draft replies, likely lower quality than the PRD's own named
+choices) — worth an explicit decision with the project owner up front,
+not assumed either way.
+
+Also worth deciding explicitly before starting, the same way Phase 8/9
+did for their own open questions: whether Phase 9's retrieval needs to be
+auto-wired into the existing pipeline first (`docs/architecture_rag.md`
+"Not Auto-Wired to Upstream Endpoints") so Auto-Reply's RAG context is
+populated automatically rather than only for manually-indexed emails, and
+whether to switch retrieval's default embedder from TF-IDF to MiniLM
+before building a feature that depends on retrieval quality
+(`docs/embedding_model_decision.md`) — a draft reply built from
+paraphrase-blind "similar" emails would inherit that weakness directly.
+
+Still blocked, same as every phase since 4, on the annotation effort
+tracked in `docs/ml_data_maturity_roadmap.md` before more ML modules
+compound the same data problem; Routing's Spam domain-transfer gap
+(`docs/error_analysis_routing.md`) remains the smaller, more tractable,
+still-unfixed near-term item. See each module's architecture doc for its
+own "Known Gaps" section for smaller, unblocked follow-ups.
