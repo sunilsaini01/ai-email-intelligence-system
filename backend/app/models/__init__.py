@@ -16,6 +16,7 @@ for the regression test that now guards against it recurring.
 """
 
 from app.models.category_prediction_log import CategoryPredictionLog
+from app.models.email_record import EmailRecord
 from app.models.intent_prediction_log import IntentPredictionLog
 from app.models.priority_prediction_log import PriorityPredictionLog
 from app.models.routing_decision_log import RoutingDecisionLog
@@ -25,6 +26,7 @@ from app.models.summary_log import SummaryLog
 
 __all__ = [
     "CategoryPredictionLog",
+    "EmailRecord",
     "IntentPredictionLog",
     "PriorityPredictionLog",
     "RoutingDecisionLog",
