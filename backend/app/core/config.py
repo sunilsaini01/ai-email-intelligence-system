@@ -60,6 +60,19 @@ class Settings(BaseSettings):
     # --- Security (placeholders — wired up properly in a later phase) ---
     SECRET_KEY: str = Field(default="CHANGE_ME_IN_PRODUCTION")
 
+    # --- Phase 11 (Manager Dashboard) — CORS ---
+    # The frontend/ Vite dev server runs on a different origin (localhost:5173)
+    # than this API (localhost:8000) -- without explicit CORS allowance the
+    # browser blocks every dashboard fetch/WebSocket call outright. A
+    # comma-separated list, not a wildcard: this project has no real auth yet
+    # (see docs/dashboard_security.md), so an open CORS policy would let any
+    # page on the internet call these endpoints from a user's browser.
+    CORS_ORIGINS: str = Field(default="http://localhost:5173,http://127.0.0.1:5173")
+
+    @property
+    def CORS_ORIGIN_LIST(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
     # --- Phase 10 (Auto-Reply Generation) — Groq ---
     # GROQ_API_KEY_2..5 are optional extra credentials GroqProvider rotates
     # to on a 429 (RateLimitError) — see app/inference/groq_provider.py.
@@ -89,6 +102,34 @@ class Settings(BaseSettings):
     # app/inference/fallback_llm_provider.py.
     OLLAMA_MODEL: str = Field(default="mistral:7b")
     OLLAMA_BASE_URL: str = Field(default="http://localhost:11434")
+
+    # --- Phase 11 (Manager Dashboard & Analytics) ---
+    # FR-61: how many CORRECTION feedback_events for one module must
+    # accumulate (since the last trigger) before a retraining_triggers row
+    # is written. A documented development default, NOT a validated
+    # business threshold -- the PRD names no value for this anywhere. See
+    # docs/architecture_dashboard.md "Retraining trigger".
+    RETRAINING_FEEDBACK_THRESHOLD: int = Field(default=50)
+
+    # FR-53's SLA dashboard. Documented development defaults, NOT real
+    # business SLA values -- the PRD names none. Configurable per
+    # environment; see docs/architecture_dashboard.md "SLA definition".
+    SLA_CRITICAL_HOURS: float = Field(default=2.0)
+    SLA_HIGH_HOURS: float = Field(default=8.0)
+    SLA_MEDIUM_HOURS: float = Field(default=24.0)
+    SLA_LOW_HOURS: float = Field(default=72.0)
+    # "At risk" fires once elapsed time crosses this fraction of the
+    # target, before the target itself is breached.
+    SLA_AT_RISK_FRACTION: float = Field(default=0.75)
+
+    # FR-60's low-confidence review-queue threshold. Two values, not one:
+    # multi-label modules (category/intent) have per-label confidence
+    # dicts that are naturally more spread out than a single-label
+    # module's scalar confidence, so a lower bar avoids flooding the queue
+    # with normal multi-label uncertainty. See
+    # docs/architecture_dashboard.md "Review Queue ranking".
+    LOW_CONFIDENCE_THRESHOLD_SINGLE_LABEL: float = Field(default=0.6)  # spam/priority/sentiment/routing
+    LOW_CONFIDENCE_THRESHOLD_MULTI_LABEL: float = Field(default=0.5)  # category/intent
 
 
 @lru_cache
