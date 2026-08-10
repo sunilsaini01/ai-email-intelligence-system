@@ -27,6 +27,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
 from app.database.session import Base
+from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
 
 
 class GUID(TypeDecorator):
@@ -64,6 +65,15 @@ class SpamPredictionLog(Base):
     __tablename__ = "spam_prediction_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+
+    # Phase 11 addition -- same DEFAULT_ORGANIZATION_ID single-tenant
+    # placeholder `emails`/`reply_drafts` already use (see
+    # app/retrieval/tenant.py). Model-level default only: no change to
+    # this module's endpoint/repository was needed or made -- every row
+    # simply carries the default until real multi-tenancy exists. Exists
+    # so the Phase 11 dashboard can filter/aggregate by organization_id
+    # consistently across all log tables, not just emails/reply_drafts.
+    organization_id: Mapped[str] = mapped_column(String(100), default=DEFAULT_ORGANIZATION_ID)
 
     subject: Mapped[str] = mapped_column(Text, default="")
     body: Mapped[str] = mapped_column(Text)
