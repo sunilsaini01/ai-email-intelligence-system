@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     health,
     intent,
     priority,
+    reply,
     retrieval,
     routing,
     sentiment,
@@ -32,3 +33,4 @@ api_router.include_router(sentiment.router)
 api_router.include_router(intent.router)
 api_router.include_router(routing.router)
 api_router.include_router(retrieval.router)
+api_router.include_router(reply.router)
