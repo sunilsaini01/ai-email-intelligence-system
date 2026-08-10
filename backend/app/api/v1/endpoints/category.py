@@ -33,6 +33,8 @@ from app.services.category_service import (
     CategoryServiceUnavailable,
     get_category_service,
 )
+from app.models.feedback_event import ACTION_CORRECTION
+from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_category_feedback_logger
 
 router = APIRouter(prefix="/categorization", tags=["Email Categorization"])
@@ -99,9 +101,10 @@ async def predict_category(
 
 
 @router.post("/feedback", response_model=CategoryFeedbackResponse)
-def submit_category_feedback(
+async def submit_category_feedback(
     request: CategoryFeedbackRequest,
     feedback_logger: FeedbackLogger = Depends(get_category_feedback_logger),
+    db: AsyncSession = Depends(get_db),
 ) -> CategoryFeedbackResponse:
     feedback_id = feedback_logger.log_correction(
         subject=request.subject,
@@ -110,4 +113,18 @@ def submit_category_feedback(
         corrected_label=request.corrected_categories,
         comment=request.comment,
     )
+
+    try:
+        await record_feedback_event(
+            db,
+            module="category",
+            action=ACTION_CORRECTION,
+            original_value=request.predicted_categories,
+            corrected_value=request.corrected_categories,
+            reviewer_id=request.reviewer_id,
+            reason=request.comment,
+        )
+    except Exception:
+        logger.warning("category_feedback_event_log_failed", exc_info=True)
+
     return CategoryFeedbackResponse(status="logged", feedback_id=feedback_id)
