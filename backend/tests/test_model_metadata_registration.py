@@ -23,6 +23,8 @@ EXPECTED_TABLES = {
     "routing_decision_logs",
     "emails",
     "reply_drafts",
+    "feedback_events",
+    "retraining_triggers",
 }
 
 
@@ -36,9 +38,11 @@ def test_models_dunder_all_matches_the_actual_registered_models():
     expected_names = {
         "CategoryPredictionLog",
         "EmailRecord",
+        "FeedbackEvent",
         "IntentPredictionLog",
         "PriorityPredictionLog",
         "ReplyDraft",
+        "RetrainingTrigger",
         "RoutingDecisionLog",
         "SentimentPredictionLog",
         "SpamPredictionLog",
