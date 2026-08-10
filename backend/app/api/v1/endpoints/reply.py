@@ -62,6 +62,8 @@ from app.services.auto_reply_service import (
     get_auto_reply_service,
     select_context,
 )
+from app.models.feedback_event import ACTION_ACCEPT, ACTION_CORRECTION, ACTION_REJECT, ACTION_RELEVANCE
+from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_auto_reply_feedback_logger
 from app.services.retrieval_service import RetrievalService, get_retrieval_service
 
@@ -274,6 +276,18 @@ async def approve_reply_draft(
     draft = await repository.approve(draft, reviewer_id=request.reviewer_id)
 
     _log_review_action(draft, action="approved")
+    try:
+        await record_feedback_event(
+            db,
+            module="auto_reply",
+            action=ACTION_ACCEPT,
+            organization_id=organization_id,
+            prediction_id=draft.id,
+            original_value=draft.generated_text,
+            reviewer_id=draft.reviewer_id,
+        )
+    except Exception:
+        logger.warning("auto_reply_approve_feedback_event_log_failed", exc_info=True)
 
     # Post-Phase-10 fix #3 -- approving a draft is the closest signal this
     # codebase has to "this case was resolved" (there is no send step to
@@ -311,9 +325,23 @@ async def edit_reply_draft(
     draft = await repository.get_by_id(organization_id, draft_id)
     if draft is None:
         raise HTTPException(status_code=404, detail="Reply draft not found.")
+    original_text = draft.generated_text
     draft = await repository.edit(draft, edited_text=request.edited_text, reviewer_id=request.reviewer_id)
 
     _log_review_action(draft, action="edited")
+    try:
+        await record_feedback_event(
+            db,
+            module="auto_reply",
+            action=ACTION_CORRECTION,
+            organization_id=organization_id,
+            prediction_id=draft.id,
+            original_value=original_text,
+            corrected_value=draft.edited_text,
+            reviewer_id=draft.reviewer_id,
+        )
+    except Exception:
+        logger.warning("auto_reply_edit_feedback_event_log_failed", exc_info=True)
 
     return _draft_to_response(draft)
 
@@ -332,16 +360,43 @@ async def reject_reply_draft(
     draft = await repository.reject(draft, reviewer_id=request.reviewer_id)
 
     _log_review_action(draft, action="rejected")
+    try:
+        await record_feedback_event(
+            db,
+            module="auto_reply",
+            action=ACTION_REJECT,
+            organization_id=organization_id,
+            prediction_id=draft.id,
+            original_value=draft.generated_text,
+            reviewer_id=draft.reviewer_id,
+        )
+    except Exception:
+        logger.warning("auto_reply_reject_feedback_event_log_failed", exc_info=True)
 
     return _draft_to_response(draft)
 
 
 @router.post("/feedback", response_model=ReplyFeedbackResponse)
-def submit_reply_feedback(
+async def submit_reply_feedback(
     request: ReplyFeedbackRequest,
     feedback_logger: FeedbackLogger = Depends(get_auto_reply_feedback_logger),
+    db: AsyncSession = Depends(get_db),
 ) -> ReplyFeedbackResponse:
     feedback_id = feedback_logger.log_auto_reply_feedback(
         draft_id=str(request.draft_id), useful=request.useful, comment=request.comment
     )
+
+    try:
+        await record_feedback_event(
+            db,
+            module="auto_reply",
+            action=ACTION_RELEVANCE,
+            prediction_id=request.draft_id,  # references reply_drafts.id
+            corrected_value={"useful": request.useful},
+            reviewer_id=request.reviewer_id,
+            reason=request.comment,
+        )
+    except Exception:
+        logger.warning("auto_reply_feedback_event_log_failed", exc_info=True)
+
     return ReplyFeedbackResponse(status="logged", feedback_id=feedback_id)
