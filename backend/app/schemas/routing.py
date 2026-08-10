@@ -63,6 +63,7 @@ class RoutingFeedbackRequest(BaseModel):
     predicted_action: RoutingAction
     corrected_action: RoutingAction | None = None
     comment: str | None = None
+    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
 
 
 class RoutingFeedbackResponse(BaseModel):
