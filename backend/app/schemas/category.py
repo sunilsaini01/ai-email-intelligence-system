@@ -53,6 +53,7 @@ class CategoryFeedbackRequest(BaseModel):
     predicted_categories: list[str]
     corrected_categories: list[str]
     comment: str | None = None
+    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
 
 
 class CategoryFeedbackResponse(BaseModel):
