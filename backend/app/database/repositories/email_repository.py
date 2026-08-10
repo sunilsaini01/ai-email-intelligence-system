@@ -11,12 +11,13 @@ syntax. The `(organization_id, content_hash)` unique constraint on
 read-then-write path that respects it.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.email_record import INDEX_STATUS_PENDING, EmailRecord
+from app.retrieval.resolution_status import RESOLVED
 
 
 class EmailRepository:
@@ -34,6 +35,7 @@ class EmailRepository:
         category: str | None,
         department: str | None,
         message_id: str | None = None,
+        priority: str | None = None,
     ) -> tuple[EmailRecord, bool]:
         """Returns (record, was_created). Re-indexing the same content
         within one organization UPDATES the existing row (refreshed
@@ -59,6 +61,7 @@ class EmailRepository:
                 category=category,
                 department=department,
                 message_id=message_id,
+                priority=priority,
                 index_status=INDEX_STATUS_PENDING,
             )
             self.session.add(record)
@@ -71,6 +74,7 @@ class EmailRepository:
             record.category = category
             record.department = department
             record.message_id = message_id or record.message_id
+            record.priority = priority
             record.index_status = INDEX_STATUS_PENDING
             was_created = False
 
@@ -121,6 +125,16 @@ class EmailRepository:
         if record is None:
             return None
         record.resolution_status = resolution_status
+        # Phase 11: resolved_at is set exactly once, only on a transition
+        # INTO RESOLVED -- deliberately not updated_at, which changes on
+        # ANY field edit and would silently drift SLA "time to resolve"
+        # every time something unrelated is re-indexed. Cleared back to
+        # NULL if status moves off RESOLVED so a later re-resolution
+        # recomputes it rather than keeping a stale prior timestamp.
+        if resolution_status == RESOLVED:
+            record.resolved_at = datetime.now(UTC)
+        else:
+            record.resolved_at = None
         await self.session.commit()
         await self.session.refresh(record)
         return record
