@@ -154,6 +154,48 @@ class FeedbackLogger:
 
         return feedback_id
 
+    def log_auto_reply_feedback(
+        self,
+        draft_id: str,
+        useful: bool,
+        comment: str | None = None,
+    ) -> str:
+        """
+        Auto-Reply's feedback shape (FR-52 -- which draft, was it a useful
+        starting point) doesn't fit log_correction's predicted/corrected-label
+        shape any more than routing's/summarization's/retrieval's did -- a
+        parallel method, same as those three, writing to the same per-module
+        JSONL file.
+
+        FR-52 says approval/rejection decisions "feed back into reply
+        quality improvement" -- this ONLY records feedback, same stance
+        every other module's feedback path already takes (see
+        log_routing_feedback/log_retrieval_feedback above). Nothing in this
+        codebase auto-retrains a prompt or fine-tunes anything from a
+        feedback file; promoting these judgments into an actual prompt/model
+        change would be a separate, explicit, human-reviewed step. Note the
+        approve/edit/reject *decision itself* is already durably recorded on
+        the `reply_drafts` row (status/reviewer_id/reviewed_at) -- this JSONL
+        entry is specifically for the separate, optional relevance judgment
+        POST /reply/feedback captures, not a duplicate of the draft's own
+        lifecycle state.
+        """
+        feedback_id = str(uuid.uuid4())
+
+        record = {
+            "feedback_id": feedback_id,
+            "module": self.module,
+            "draft_id": draft_id,
+            "useful": useful,
+            "comment": comment,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+
+        return feedback_id
+
     def log_retrieval_feedback(
         self,
         query_subject: str,
@@ -225,3 +267,7 @@ def get_routing_feedback_logger() -> FeedbackLogger:
 
 def get_retrieval_feedback_logger() -> FeedbackLogger:
     return FeedbackLogger(module="retrieval")
+
+
+def get_auto_reply_feedback_logger() -> FeedbackLogger:
+    return FeedbackLogger(module="auto_reply")
