@@ -41,6 +41,7 @@ class IntentFeedbackRequest(BaseModel):
     predicted_label: list[str]
     corrected_label: list[str]
     comment: str | None = None
+    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
 
 
 class IntentFeedbackResponse(BaseModel):
