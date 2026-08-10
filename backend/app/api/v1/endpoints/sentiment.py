@@ -28,6 +28,8 @@ from app.schemas.sentiment import (
     SentimentPredictionRequest,
     SentimentPredictionResponse,
 )
+from app.models.feedback_event import ACTION_CORRECTION
+from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_sentiment_feedback_logger
 from app.services.sentiment_service import SentimentService, get_sentiment_service
 
@@ -78,9 +80,10 @@ async def predict_sentiment(
 
 
 @router.post("/feedback", response_model=SentimentFeedbackResponse)
-def submit_sentiment_feedback(
+async def submit_sentiment_feedback(
     request: SentimentFeedbackRequest,
     feedback_logger: FeedbackLogger = Depends(get_sentiment_feedback_logger),
+    db: AsyncSession = Depends(get_db),
 ) -> SentimentFeedbackResponse:
     feedback_id = feedback_logger.log_correction(
         subject=request.subject,
@@ -89,4 +92,18 @@ def submit_sentiment_feedback(
         corrected_label=request.corrected_label,
         comment=request.comment,
     )
+
+    try:
+        await record_feedback_event(
+            db,
+            module="sentiment",
+            action=ACTION_CORRECTION,
+            original_value=request.predicted_label,
+            corrected_value=request.corrected_label,
+            reviewer_id=request.reviewer_id,
+            reason=request.comment,
+        )
+    except Exception:
+        logger.warning("sentiment_feedback_event_log_failed", exc_info=True)
+
     return SentimentFeedbackResponse(status="logged", feedback_id=feedback_id)
