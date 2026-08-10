@@ -12,6 +12,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     category,
+    dashboard,
     health,
     intent,
     priority,
@@ -34,3 +35,4 @@ api_router.include_router(intent.router)
 api_router.include_router(routing.router)
 api_router.include_router(retrieval.router)
 api_router.include_router(reply.router)
+api_router.include_router(dashboard.router)
