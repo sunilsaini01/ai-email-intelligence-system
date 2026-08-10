@@ -30,6 +30,8 @@ from app.schemas.routing import (
     RoutingPredictionRequest,
     RoutingPredictionResponse,
 )
+from app.models.feedback_event import ACTION_CORRECTION
+from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_routing_feedback_logger
 from app.services.routing_service import RoutingService, get_routing_service
 
@@ -91,9 +93,10 @@ async def predict_routing(
 
 
 @router.post("/feedback", response_model=RoutingFeedbackResponse)
-def submit_routing_feedback(
+async def submit_routing_feedback(
     request: RoutingFeedbackRequest,
     feedback_logger: FeedbackLogger = Depends(get_routing_feedback_logger),
+    db: AsyncSession = Depends(get_db),
 ) -> RoutingFeedbackResponse:
     feedback_id = feedback_logger.log_routing_feedback(
         subject=request.subject,
@@ -104,4 +107,18 @@ def submit_routing_feedback(
         corrected_action=request.corrected_action,
         comment=request.comment,
     )
+
+    try:
+        await record_feedback_event(
+            db,
+            module="routing",
+            action=ACTION_CORRECTION,
+            original_value={"department": request.predicted_department, "action": request.predicted_action},
+            corrected_value={"department": request.corrected_department, "action": request.corrected_action},
+            reviewer_id=request.reviewer_id,
+            reason=request.comment,
+        )
+    except Exception:
+        logger.warning("routing_feedback_event_log_failed", exc_info=True)
+
     return RoutingFeedbackResponse(status="logged", feedback_id=feedback_id)
