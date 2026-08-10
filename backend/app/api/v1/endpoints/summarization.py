@@ -32,6 +32,8 @@ from app.schemas.summarization import (
     SummarizationRequest,
     SummarizationResponse,
 )
+from app.models.feedback_event import ACTION_ACCEPT, ACTION_CORRECTION, ACTION_REJECT
+from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_summarization_feedback_logger
 from app.services.summarization_service import SummarizationService, get_summarization_service
 
@@ -113,9 +115,10 @@ async def predict_summary(
 
 
 @router.post("/feedback", response_model=SummarizationFeedbackResponse)
-def submit_summary_feedback(
+async def submit_summary_feedback(
     request: SummarizationFeedbackRequest,
     feedback_logger: FeedbackLogger = Depends(get_summarization_feedback_logger),
+    db: AsyncSession = Depends(get_db),
 ) -> SummarizationFeedbackResponse:
     feedback_id = feedback_logger.log_summary_feedback(
         original_text=request.original_text,
@@ -125,4 +128,24 @@ def submit_summary_feedback(
         quality_score=request.quality_score,
         reason=request.reason,
     )
+
+    # A corrected_summary is a real CORRECTION regardless of `accepted`;
+    # otherwise this is a plain accept/reject judgment, not a correction --
+    # summarization has no confidence field at all (see
+    # PHASE_11_AUDIT_REPORT.md finding), so it never contributes to the
+    # confidence-bucketed correction rate, only the plain correction count.
+    action = ACTION_CORRECTION if request.corrected_summary else (ACTION_ACCEPT if request.accepted else ACTION_REJECT)
+    try:
+        await record_feedback_event(
+            db,
+            module="summarization",
+            action=action,
+            original_value=request.generated_summary,
+            corrected_value=request.corrected_summary,
+            reviewer_id=request.reviewer_id,
+            reason=request.reason,
+        )
+    except Exception:
+        logger.warning("summarization_feedback_event_log_failed", exc_info=True)
+
     return SummarizationFeedbackResponse(status="logged", feedback_id=feedback_id)
