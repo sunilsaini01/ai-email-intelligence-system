@@ -1,9 +1,15 @@
 # AI Email Intelligence System
 
-> **Status:** Phase 11 of 15 (PRD phase numbering). Modular monolith, no
-> Kafka/K8s/microservices yet — deliberately, see `docs/architecture.md`.
-> Phase 11 is also this project's first frontend (`frontend/`, React +
-> TypeScript) — every prior phase was backend-only.
+> **Status:** Phase 12 of 15 (PRD phase numbering). Phase 12 is this
+> project's first departure from the pure modular monolith: an
+> event-driven multi-agent layer (Kafka + an Orchestrator + 6 independent
+> ML agents) now runs ALONGSIDE the still-fully-functional monolith, not
+> instead of it — every pre-Phase-12 endpoint is unchanged. See
+> `docs/architecture_multi_agent.md` for the full before/after and why
+> this reverses (in a bounded, disclosed way) Phase 1's original
+> "no Kafka yet" decision (`docs/architecture.md`).
+> Phase 11 was this project's first frontend (`frontend/`, React +
+> TypeScript) — every phase before that was backend-only.
 > Full PRD: [`project document/PRD_AI_Email_Intelligence_System.md`](project%20document/PRD_AI_Email_Intelligence_System.md).
 
 ## Progress
@@ -22,7 +28,8 @@
 | 9 | Similar Email Retrieval / RAG Foundation | 🟡 Vector similarity search (ChromaDB, local) over PII-scrubbed embeddings, metadata-filterable by category/department/resolution-status, served and audit-logged. **New infrastructure**: this project's first canonical cross-module email entity, and its first wired-in PII anonymization. **Not PRD-compliant** — no retrieval-outcome ground truth exists. Two real bugs found and fixed during this phase's own testing: a TF-IDF vocabulary-pollution bug (all-zero similarity scores) and a Windows-specific import-order crash that segfaulted the *entire* test suite. **Default embedder changed to MiniLM in Phase 10** (see that row) — this row's TF-IDF-as-default framing is historical. See `docs/model_cards/embedding_retrieval.md` / `docs/error_analysis_retrieval.md`. |
 | 10 | Auto-Reply Generation | 🟡 RAG + LLM draft-reply generation (Groq/`llama-3.3-70b-versatile`, a project-owner decision — not the PRD's own OpenAI/Anthropic suggestion), draft-only, human approve/edit/reject required (FR-49/FR-51 enforced architecturally — no send capability exists anywhere in the pipeline). **Not PRD-compliant** — no Human Acceptance Rate data exists (requires real agents/real traffic). A real, disclosed hallucination example (fabricated support hours on an ungrounded query) and a real performance bug (embedder/vector-store reconstructed on every call, found and fixed via this phase's own real-Postgres-and-real-Groq end-to-end testing) were both found this phase. See `docs/model_cards/auto_reply.md` / `docs/error_analysis_auto_reply.md`. |
 | 11 | Manager Dashboard & Analytics | 🟡 React+TypeScript frontend (this project's first) over a new analytics query layer (`app/services/dashboard_service.py`) and a unified `feedback_events` table replacing write-only JSONL as the queryable home for corrections/confirmations across all 9 modules. Real-time updates (WebSocket + 30s polling fallback), SLA tracking, a ranked low-confidence Human Review Queue, CSV/PDF export, and honest evidence-status labeling on every model-derived number (never presents synthetic/off-domain metrics as production accuracy). **Not PRD-compliant** in several disclosed ways — email volume is a proxy (Phase 9's indexing still isn't auto-wired), WebSocket fan-out is single-process only, PDF/CSV export is on-demand not scheduled, and FR-61's retraining trigger is audit-only by explicit design (no retraining executes). Four real bugs (two timezone-handling bugs, a duplicate-feedback race, an unbounded query) were found and fixed during this phase's own adversarial review. See `docs/architecture_dashboard.md` / `docs/error_analysis_dashboard.md` / `PHASE_11_FINAL_REPORT.md`. |
-| 12–15 | CI/CD, Cloud, MLOps | ⬜ Not started |
+| 12 | Multi-Agent Architecture | 🟡 New `POST /api/v1/email/process` → `GET /api/v1/workflows/{job_id}` pipeline: an Orchestrator Agent (`app/agents/orchestrator.py`) coordinates 6 independent Kafka-based Specialist Agents (Spam/Priority/Category/Sentiment/Intent/Summarization — one Kafka consumer group each), each wrapping its existing, unmodified `*Service` with FR-66 retry+exponential-backoff and a dead-letter topic. Idempotent under Kafka's at-least-once delivery (verified: a real duplicate-message replay against a live broker produces exactly one result, not two). Routing and Retrieval indexing stay in-process, reusing their pre-existing composition logic with the agents' already-computed results (no re-inference) — `RoutingService.route()` gained additive `precomputed_*` kwargs for this, verified not to change behavior for any existing caller (all 60 pre-Phase-12 routing tests pass unchanged). Auto-Reply is deliberately NOT auto-triggered (a real, billed external API call — see `docs/architecture_multi_agent.md` "Scope Boundary"). **Not PRD-compliant** in disclosed ways — no per-workflow timeout for a silently-missing agent (a workflow can stay `RUNNING` forever if an agent process never reports back at all), Orchestrator in-flight state is process-local (lost on restart), and Kafka-down/Postgres-down failure-injection tests aren't automated (the failure PATHS are implemented and documented, just not exercised by a test that kills a container mid-run). Verified end-to-end against a real disposable Postgres 16 container AND a real disposable `apache/kafka` (KRaft) container — not mocked: both the full 6-agent non-spam path and the 2-agent spam-gated path complete correctly with real trained model artifacts. See `docs/architecture_multi_agent.md` / `docs/kafka_architecture.md` / `PHASE_12_AUDIT_REPORT.md`. |
+| 13–15 | CI/CD, Cloud, MLOps | ⬜ Not started |
 
 **Read this before trusting any priority-classification, categorization,
 summarization, sentiment, intent, or routing metric**: Phases 4, 5, and 7B's
@@ -339,21 +346,30 @@ ingestion, task-aware preprocessing (`EmailPreprocessor` with per-task
 configs), reusable content/metadata feature extractors
 (`app/feature_engineering/`).
 
-**Testing**: 461 backend tests (+1 opt-in slow integration test,
-`RUN_SLOW_TESTS=1`) across data validation, model behavior, API
-contracts, security, and DB persistence — `pytest`, `pytest-asyncio`,
-`aiosqlite` for DB tests without a live Postgres. No paid API key is
-required for this suite — Auto-Reply's LLM calls are always faked
-(`FakeLLMProvider`) or exercised against a monkeypatched `groq.Groq`
-client using real exception types, never a real network call; the only
-real-Groq-API code path is the manual, opt-in
+**Testing**: 487 backend tests (461 pre-Phase-12 + 26 new), 0 failed, 1
+skipped (verified via a real full-suite run, 90s), + 1 opt-in slow
+integration test (`RUN_SLOW_TESTS=1`) + 1 opt-in real-infrastructure
+integration test (`RUN_KAFKA_INTEGRATION_TESTS=1`) across data
+validation, model behavior, API contracts, security, and DB persistence —
+`pytest`, `pytest-asyncio`, `aiosqlite` for DB tests without a live
+Postgres. No paid API key is required for this suite — Auto-Reply's LLM
+calls are always faked (`FakeLLMProvider`) or exercised against a
+monkeypatched `groq.Groq` client using real exception types, never a real
+network call; the only real-Groq-API code path is the manual, opt-in
 `scripts/qualitative_eval_auto_reply.py`. Migrations are additionally
 verified against a real, disposable PostgreSQL 16 container (not just
 SQLite) whenever the schema changes — see
-`docs/phase10_requirements_traceability.md` and
-`docs/analytics_data_model.md` for the two most recent examples
+`docs/phase10_requirements_traceability.md`, `docs/analytics_data_model.md`,
+and `docs/workflow_state.md` for the three most recent examples
 (upgrade → downgrade → upgrade round-trips, plus real end-to-end
 requests through the actual FastAPI app against that same container).
+**Phase 12's real-infrastructure test**
+(`backend/tests/test_phase12_kafka_integration.py::test_multi_agent_pipeline_end_to_end`,
+**verified passing**, 34.47s) additionally provisions a real, disposable
+`apache/kafka` (KRaft) container and runs the actual Orchestrator + all 6
+specialist agent consumers against it — not mocked, not an in-process
+fake queue. Writing it caught a real bug a shallower manual verification
+script had missed entirely — see `docs/testing_strategy_phase12.md`.
 **Frontend has no automated test suite yet** (no Jest/Vitest/Testing
 Library) — Phase 11's frontend verification is limited to a clean
 `npm run build` (strict TypeScript, zero errors) and manual `curl`-based
@@ -370,11 +386,19 @@ cp .env.example .env
 make run            # from project root
 make test           # from project root
 
-# Docker (API + Postgres)
+# Docker (API + Postgres + Kafka + Agents, Module 13)
 cp backend/.env.example backend/.env
 make docker-up
 curl http://localhost:8000/api/v1/health
 curl http://localhost:8000/api/v1/health/ready
+
+# Try the new multi-agent pipeline (Module 13):
+curl -X POST http://localhost:8000/api/v1/email/process \
+  -H "Content-Type: application/json" \
+  -d '{"subject": "Order issue", "body": "My order has not arrived.", "sender_email": "customer@example.com"}'
+# -> {"job_id": "...", "status": "PENDING"} -- then poll:
+curl http://localhost:8000/api/v1/workflows/<job_id>
+# docker compose logs -f agents   # watch the Orchestrator + 6 agents process it (FR-67 structured logs)
 ```
 
 API docs (auto-generated): `http://localhost:8000/docs`
@@ -423,15 +447,18 @@ around it (map to a different host port, e.g. `5433:5432`, and set
 ```
 backend/
 ├── app/
-│   ├── api/v1/endpoints/       # spam.py, priority.py, category.py, summarization.py, sentiment.py, intent.py, routing.py, retrieval.py, reply.py, dashboard.py (Module 11), health.py
+│   ├── agents/                    # Module 13 — orchestrator.py, {spam,priority,category,sentiment,intent,summarization}_agent.py, base.py, runner.py (docker-compose's `agents` service entrypoint)
+│   ├── messaging/                 # Module 13 — topics.py, schemas.py (AgentEvent/DeadLetterEnvelope), producer.py, consumer.py, retry.py
+│   ├── workflows/                 # Module 13 — package marker only; workflow ORCHESTRATION lives in app/agents/orchestrator.py, workflow STATE models live in app/models/
+│   ├── api/v1/endpoints/       # spam.py, priority.py, category.py, summarization.py, sentiment.py, intent.py, routing.py, retrieval.py, reply.py, dashboard.py (Module 11), workflows.py (Module 13 — POST /email/process, GET /workflows/{job_id}), health.py
 │   ├── core/                    # config, logging — cross-cutting
 │   ├── data_ingestion/          # corpus loaders + dataset_registry.py
-│   ├── database/                # async session, repositories/ (incl. reply_draft_repository.py)
+│   ├── database/                # async session, repositories/ (incl. reply_draft_repository.py, workflow_execution_repository.py + agent_execution_repository.py (Module 13))
 │   ├── evaluation/              # model_evaluator (classification) + summarization_evaluator (ROUGE)
 │   ├── feature_engineering/     # content/metadata feature extractors, keyword lexicons, feature_schema
 │   ├── inference/                # SpamPredictor/PriorityPredictor/CategoryPredictor/VaderSentimentPredictor/IntentPredictor/TfidfEmbedder/MiniLmEmbedder + Protocol backends; llm_provider.py (Protocol) + groq_provider.py + fake_llm_provider.py (Module 10)
 │   ├── middleware/               # request logging, global error handling
-│   ├── models/                   # SQLAlchemy ORM (*_prediction_log.py, summary_log.py, routing_decision_log.py, email_record.py, reply_draft.py, feedback_event.py + retraining_trigger.py (Module 11))
+│   ├── models/                   # SQLAlchemy ORM (*_prediction_log.py, summary_log.py, routing_decision_log.py, email_record.py, reply_draft.py, feedback_event.py + retraining_trigger.py (Module 11), workflow_execution.py + agent_execution.py (Module 13))
 │   ├── nlp/                       # extractive/abstractive summarizers, grounding, thread, chunking, intent_entities, reply_prompt.py (Module 10) — generation/extraction, not classification
 │   ├── pipeline/                  # PipelineConfig/Factory, MLPipeline, PriorityMLPipeline, CategoryMLPipeline, IntentMLPipeline
 │   ├── preprocessing/             # EmailPreprocessor + task-specific configs
@@ -519,6 +546,14 @@ docs/
 ├── dashboard_performance.md
 ├── error_analysis_dashboard.md
 ├── model_evidence_policy.md
+├── architecture_multi_agent.md         # Module 13 — before/after, scope boundary, reuse ledger, disclosed limitations
+├── kafka_architecture.md               # Module 13 — client/broker decisions, topics, partitioning, delivery semantics
+├── agent_contracts.md                  # Module 13 — message contract, agent lifecycle, per-agent I/O
+├── workflow_state.md                   # Module 13 — workflow_executions/agent_executions schema and semantics
+├── retry_strategy.md                   # Module 13 — FR-66 retry/backoff/error-classification design
+├── failure_handling.md                 # Module 13 — full failure-scenario matrix (Kafka down, DB down, etc.)
+├── requirements_traceability_phase12.md
+├── testing_strategy_phase12.md
 ├── technical_debt/
 │   └── database_write_hang.md          # investigated, mitigated, NOT root-caused — read before assuming DB writes can't hang
 ├── model_cards/
@@ -587,6 +622,16 @@ project document/
 - [`PHASE_11_FINAL_REPORT.md`](PHASE_11_FINAL_REPORT.md) — the Stage 19 phase-gate report: what's FULL/PARTIAL, test counts, and honestly-stated production-readiness level.
 - [`docs/technical_debt/database_write_hang.md`](docs/technical_debt/database_write_hang.md) — a real, reproduced DB-write hang under the live Windows request path; seven isolation experiments ruled out asyncpg, bare asyncio, SQLAlchemy alone, and `BaseHTTPMiddleware` as the sole cause; root cause still not found. Mitigated (bounded, not eliminated), not solved — read before assuming a DB timeout in this codebase can't still hang.
 - [`docs/git_workflow.md`](docs/git_workflow.md) — branching, commit conventions.
+- [`PHASE_12_AUDIT_REPORT.md`](PHASE_12_AUDIT_REPORT.md) — the pre-implementation audit: the headline finding that no "process this email" entrypoint existed anywhere before Phase 12, the confirmed scope decisions (client library, broker, which modules become agents), and the full design for FR-63–67.
+- [`docs/architecture_multi_agent.md`](docs/architecture_multi_agent.md) — the as-built architecture: before/after diagrams, component responsibilities, the reuse ledger (what changed vs. what didn't in existing code), and disclosed limitations.
+- [`docs/kafka_architecture.md`](docs/kafka_architecture.md) — client/broker decisions and why, the full topic list, partitioning/consumer-group/delivery-semantics design, and why Routing/Retrieval/Auto-Reply are deliberately NOT Kafka agents.
+- [`docs/agent_contracts.md`](docs/agent_contracts.md) — the `AgentEvent` message contract, the common agent lifecycle every specialist agent shares, and the per-agent input/output table.
+- [`docs/workflow_state.md`](docs/workflow_state.md) — why Postgres (not Kafka) is the durable system of record, the `workflow_executions`/`agent_executions` schema, and status semantics.
+- [`docs/retry_strategy.md`](docs/retry_strategy.md) — FR-66's in-process retry design, exponential backoff, and transient-vs-permanent error classification.
+- [`docs/failure_handling.md`](docs/failure_handling.md) — the full failure-scenario matrix (Kafka down, Postgres down, agent crash, malformed event, consumer restart, etc.) and the disclosed no-per-workflow-timeout limitation.
+- [`docs/requirements_traceability_phase12.md`](docs/requirements_traceability_phase12.md) — FR-63 to FR-67 mapped to design/implementation/test/evidence, plus the full Definition-of-Done checklist.
+- [`docs/testing_strategy_phase12.md`](docs/testing_strategy_phase12.md) — unit vs. real-infrastructure integration tests, and a real finding (the Spam model's known over-firing issue, first documented in Phase 8, resurfacing through the new pipeline) discovered while writing these tests.
+- [`PHASE_12_COMPLETION_REPORT.md`](PHASE_12_COMPLETION_REPORT.md) — the phase-gate report: what's real vs. disclosed-limited, real bugs found and fixed (including a real `logging` stdlib collision found via the live integration test), and production-readiness level.
 
 ## Known Gaps (tracked, not hidden)
 
@@ -631,21 +676,28 @@ project document/
 - **No Human Acceptance Rate or correction-rate data exists for real usage yet** — Phase 11's Model Quality page and Overview KPIs correctly display "No real observations yet" rather than fabricating a 0% rate, but the underlying gap (no real agents, no real traffic) is unchanged from Phase 10. See `docs/feedback_loop.md`.
 - **Phase 11's frontend has no automated test coverage** (no Jest/Vitest/Testing Library) and was never visually verified in an actual browser this phase (no browser tooling was available in the environment it was built in) — disclosed explicitly, not silently claimed as done. See `PHASE_11_FINAL_REPORT.md` §7–8.
 - **Four real bugs were found and fixed during Phase 11's own adversarial review**: two datetime timezone-handling bugs (SLA calculation crashing on SQLite's naive-datetime round-trip; custom date-range filters silently depending on the Postgres server's session timezone rather than being explicitly normalized), a duplicate-feedback race condition (double-clicking "Confirm" on the Review Queue could insert two rows for one review), and an unbounded database query (the Review Queue scanned entire tables with no row cap). All four fixed and verified with dedicated tests. See `docs/error_analysis_dashboard.md`.
+- **Phase 12 has no per-workflow timeout for a silently-missing agent** — if an expected agent's consumer process never reports back at all (as opposed to reporting a failure, which finalizes normally), the workflow stays `RUNNING` indefinitely. A real fix needs a scheduled sweep job this codebase has no scheduler for yet — same class of gap as Phase 11's "no scheduled report generation." See `docs/architecture_multi_agent.md` "Known, Disclosed Limitations."
+- **The Orchestrator's in-flight workflow tracking is process-local, lost on restart** — same disclosed single-process limitation Phase 11's WebSocket broadcaster already carries; `workflow_executions`/`agent_executions` in Postgres are unaffected, only workflows mid-flight at the moment of restart are. See `docs/architecture_multi_agent.md`.
+- **A real bug (two call sites) was found via Phase 12's own live-Kafka integration test, not a code review**: `Orchestrator`'s structured logging passed `module` as a Python `logging` `extra` key — a reserved stdlib `LogRecord` attribute — which raised `KeyError: "Attempt to overwrite 'module' in LogRecord"` on every single agent dispatch once real logging was active. A separate, earlier manual verification script never caught this at all, because it never called `setup_logging()`, so its log calls were filtered out below the default WARNING level before the collision was ever reached — real evidence that a shallow smoke-test can look completely clean while missing a defect a properly-configured test catches immediately. Fixed (renamed to `agent_name`) and re-verified against a live broker. See `docs/testing_strategy_phase12.md`.
+- **Kafka-down/Postgres-down failure-injection tests are not automated for Phase 12** — the failure paths are implemented and documented (`docs/failure_handling.md`), but no test actually kills a container mid-run to exercise them, consistent with Phase 6's own finding that even a carefully engineered failure-injection test can fail to reproduce the real failure mode it targets (`docs/technical_debt/database_write_hang.md`).
+- **Auto-Reply generation is deliberately NOT auto-triggered by the new pipeline** — it makes a real, billed Groq API call; wiring it into every processed email without being asked would silently increase real spend and external-service dependency well beyond what FR-63–67 requires. It remains reachable only through its existing, explicit `/reply/generate` endpoint. See `docs/architecture_multi_agent.md` "Scope Boundary."
+- **A second real bug was found via a dedicated post-delivery code review, not the integration test**: `Orchestrator._start_workflow` had no idempotency guard, unlike every specialist agent. A redelivered `email.processing.requested` (FR-65's normal at-least-once behavior) could silently reset an already-`COMPLETED` workflow back to `RUNNING` with no way to ever re-finalize it. Fixed by checking the workflow's DB status before dispatching, mirroring the pattern every specialist agent already used; 2 new regression tests reproduce the exact failure sequence, and the fix was re-verified against a live broker afterward. See `docs/failure_handling.md` "Duplicate Event."
 
-## Next (Phase 12)
+## Next (Phase 13)
 
-CI/CD (Module 12, per the PRD's own phase numbering): this project has
-had no automated pipeline at all through 11 phases — every test run,
-every migration verification against a real disposable Postgres
-container, and every build check in this project's history has been run
-manually, by hand, per phase. Worth an explicit scoping conversation
-before starting, the same way Phase 9/10/11 each flagged their own open
-questions first: what CI actually needs to run (461 backend tests +
-`npm run build` for the frontend, at minimum), whether migration
-verification against a real Postgres container belongs in CI or stays a
-manual pre-merge step, and whether Phase 11's own disclosed gaps
-(frontend test coverage, in particular) should be closed before or
-alongside CI/CD setup rather than after.
+Per the PRD's own module numbering, **Modules 14–15** are next: FR-68–72
+— Docker (already done since Phase 1), Kubernetes horizontal scaling, a
+CI/CD pipeline (lint/unit/integration/model-sanity gates before deploy),
+MLflow model version tracking, and alerting (accuracy drift, latency
+spikes, queue depth, error rate). These are the natural next step now
+that Phase 12 has given this project its first genuinely async,
+multi-process architecture (API + Kafka + a separate `agents` container)
+worth building CI/CD and alerting around — a monolith with no moving
+parts had comparatively little for a pipeline to gate. Given every phase
+including this one has run its own tests and migrations by hand, CI/CD
+(FR-70) is likely the single highest-value item in that group. This is
+an explicit scoping decision for the next phase's own prompt to make, not
+one this README should quietly resolve.
 
 Still blocked, same as every phase since 4, on the annotation effort
 tracked in `docs/ml_data_maturity_roadmap.md` before more ML modules
