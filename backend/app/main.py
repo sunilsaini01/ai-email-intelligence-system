@@ -40,6 +40,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import setup_logging
+from app.messaging.producer import start_producer, stop_producer
 from app.middleware.exception_handlers import register_exception_handlers
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.services.auto_reply_service import get_auto_reply_service
@@ -156,7 +157,26 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("auto_reply_service_warmup_failed", exc_info=True)
 
+    # Phase 12 -- the API process needs its own Kafka producer to publish
+    # `email.processing.requested` from POST /api/v1/email/process (see
+    # app/api/v1/endpoints/workflows.py). Separate from the `agents`
+    # container's own producer (docker-compose.yml) -- each process gets
+    # its own connection, same as every other per-process resource in this
+    # lifespan. Failure here degrades the SAME way every other warmup does
+    # (logged, not raised): a missing/unreachable Kafka broker shouldn't
+    # prevent the rest of the API (every pre-existing synchronous endpoint)
+    # from starting -- it only means POST /email/process itself will fail
+    # per-request until Kafka is reachable, exactly the graceful-
+    # degradation stance this function's own docstring already commits to.
+    try:
+        await start_producer()
+        logger.info("kafka_producer_warmed_up")
+    except Exception:
+        logger.warning("kafka_producer_warmup_failed", exc_info=True)
+
     yield
+
+    await stop_producer()
 
 
 def create_app() -> FastAPI:
