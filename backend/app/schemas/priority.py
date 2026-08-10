@@ -49,6 +49,7 @@ class PriorityFeedbackRequest(BaseModel):
     predicted_label: str
     corrected_label: str
     comment: str | None = None
+    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
 
 
 class PriorityFeedbackResponse(BaseModel):
