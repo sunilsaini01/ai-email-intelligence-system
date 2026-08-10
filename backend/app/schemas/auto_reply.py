@@ -57,6 +57,7 @@ class ReplyFeedbackRequest(BaseModel):
     draft_id: uuid.UUID
     useful: bool = Field(description="Was this draft a genuinely useful starting point?")
     comment: str | None = None
+    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
 
 
 class ReplyFeedbackResponse(BaseModel):
