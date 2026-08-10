@@ -51,3 +51,11 @@ groq==1.6.0
 # app/inference/ollama_provider.py (Post-Phase-10 fix #5) imports and uses
 # it directly, not just transitively.
 httpx==0.28.1
+
+# Phase 11 (manager dashboard & analytics) additions only:
+# reportlab -- pure-Python PDF generation for FR-56's weekly report export
+# (app/services/dashboard_report_export.py). Chosen over weasyprint
+# specifically to avoid native system libraries (Pango/Cairo) on the
+# Windows dev environment this project targets -- see
+# docs/architecture_dashboard.md "PDF library".
+reportlab==4.5.1
