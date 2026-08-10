@@ -25,6 +25,8 @@ EXPECTED_TABLES = {
     "reply_drafts",
     "feedback_events",
     "retraining_triggers",
+    "workflow_executions",
+    "agent_executions",
 }
 
 
@@ -36,6 +38,7 @@ def test_every_prediction_log_table_is_registered_in_base_metadata():
 
 def test_models_dunder_all_matches_the_actual_registered_models():
     expected_names = {
+        "AgentExecution",
         "CategoryPredictionLog",
         "EmailRecord",
         "FeedbackEvent",
@@ -47,5 +50,6 @@ def test_models_dunder_all_matches_the_actual_registered_models():
         "SentimentPredictionLog",
         "SpamPredictionLog",
         "SummaryLog",
+        "WorkflowExecution",
     }
     assert set(app.models.__all__) == expected_names
