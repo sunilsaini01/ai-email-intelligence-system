@@ -22,6 +22,7 @@ EXPECTED_TABLES = {
     "intent_prediction_logs",
     "routing_decision_logs",
     "emails",
+    "reply_drafts",
 }
 
 
@@ -37,6 +38,7 @@ def test_models_dunder_all_matches_the_actual_registered_models():
         "EmailRecord",
         "IntentPredictionLog",
         "PriorityPredictionLog",
+        "ReplyDraft",
         "RoutingDecisionLog",
         "SentimentPredictionLog",
         "SpamPredictionLog",
