@@ -22,6 +22,7 @@ from app.api.v1.endpoints import (
     sentiment,
     spam,
     summarization,
+    workflows,
 )
 
 api_router = APIRouter()
@@ -36,3 +37,4 @@ api_router.include_router(routing.router)
 api_router.include_router(retrieval.router)
 api_router.include_router(reply.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(workflows.router)
