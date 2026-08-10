@@ -44,6 +44,8 @@ from app.schemas.retrieval import (
     RetrievalSearchResponse,
     SimilarEmailMatch,
 )
+from app.models.feedback_event import ACTION_RELEVANCE
+from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_retrieval_feedback_logger
 from app.services.retrieval_service import RetrievalService, get_retrieval_service
 
@@ -81,6 +83,7 @@ async def index_email(
                 received_at=request.received_at or datetime.now(UTC),
                 category=request.category,
                 department=request.department,
+                priority=request.priority,
             ),
             timeout=DB_WRITE_TIMEOUT_SECONDS,
         )
@@ -259,9 +262,10 @@ async def delete_email(
 
 
 @router.post("/feedback", response_model=RetrievalFeedbackResponse)
-def submit_retrieval_feedback(
+async def submit_retrieval_feedback(
     request: RetrievalFeedbackRequest,
     feedback_logger: FeedbackLogger = Depends(get_retrieval_feedback_logger),
+    db: AsyncSession = Depends(get_db),
 ) -> RetrievalFeedbackResponse:
     feedback_id = feedback_logger.log_retrieval_feedback(
         query_subject=request.query_subject,
@@ -270,4 +274,18 @@ def submit_retrieval_feedback(
         useful=request.useful,
         comment=request.comment,
     )
+
+    try:
+        await record_feedback_event(
+            db,
+            module="retrieval",
+            action=ACTION_RELEVANCE,
+            prediction_id=request.result_email_id,  # references emails.id, not a *_prediction_logs row
+            corrected_value={"useful": request.useful},
+            reviewer_id=request.reviewer_id,
+            reason=request.comment,
+        )
+    except Exception:
+        logger.warning("retrieval_feedback_event_log_failed", exc_info=True)
+
     return RetrievalFeedbackResponse(status="logged", feedback_id=feedback_id)
