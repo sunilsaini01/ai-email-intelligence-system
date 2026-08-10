@@ -15,6 +15,7 @@ docstring on exactly this trap, and backend/tests/test_model_metadata_registrati
 for the regression test that now guards against it recurring.
 """
 
+from app.models.agent_execution import AgentExecution
 from app.models.category_prediction_log import CategoryPredictionLog
 from app.models.email_record import EmailRecord
 from app.models.feedback_event import FeedbackEvent
@@ -26,8 +27,10 @@ from app.models.routing_decision_log import RoutingDecisionLog
 from app.models.sentiment_prediction_log import SentimentPredictionLog
 from app.models.spam_prediction_log import SpamPredictionLog
 from app.models.summary_log import SummaryLog
+from app.models.workflow_execution import WorkflowExecution
 
 __all__ = [
+    "AgentExecution",
     "CategoryPredictionLog",
     "EmailRecord",
     "FeedbackEvent",
@@ -39,4 +42,5 @@ __all__ = [
     "SentimentPredictionLog",
     "SpamPredictionLog",
     "SummaryLog",
+    "WorkflowExecution",
 ]
