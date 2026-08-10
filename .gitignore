@@ -35,6 +35,9 @@ ai_models/*
 # --- OS ---
 .DS_Store
 
+# --- Local vector store (Phase 9/10 — Chroma persists here at runtime) ---
+artifacts/chroma/
+
 PS C:\Users\kumar\Downloads\email-intelligence-system> dir
 
 
