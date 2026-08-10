@@ -51,6 +51,8 @@ from app.schemas.spam import (
     SpamPredictionRequest,
     SpamPredictionResponse,
 )
+from app.models.feedback_event import ACTION_CORRECTION
+from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_feedback_logger
 from app.services.spam_service import SpamService, SpamServiceUnavailable, get_spam_service
 
@@ -106,9 +108,10 @@ async def predict_spam(
 
 
 @router.post("/feedback", response_model=SpamFeedbackResponse)
-def submit_spam_feedback(
+async def submit_spam_feedback(
     request: SpamFeedbackRequest,
     feedback_logger: FeedbackLogger = Depends(get_feedback_logger),
+    db: AsyncSession = Depends(get_db),
 ) -> SpamFeedbackResponse:
     feedback_id = feedback_logger.log_correction(
         subject=request.subject,
@@ -117,4 +120,22 @@ def submit_spam_feedback(
         corrected_label=request.corrected_label,
         comment=request.comment,
     )
+
+    # Phase 11 addition -- dual-write to feedback_events (FR-58/59), same
+    # shape as every DB audit write in this codebase: best-effort, never
+    # fails the request. The JSONL write above is unchanged and remains
+    # the primary record for anything already depending on it.
+    try:
+        await record_feedback_event(
+            db,
+            module="spam",
+            action=ACTION_CORRECTION,
+            original_value=request.predicted_label,
+            corrected_value=request.corrected_label,
+            reviewer_id=request.reviewer_id,
+            reason=request.comment,
+        )
+    except Exception:
+        logger.warning("spam_feedback_event_log_failed", exc_info=True)
+
     return SpamFeedbackResponse(status="logged", feedback_id=feedback_id)
