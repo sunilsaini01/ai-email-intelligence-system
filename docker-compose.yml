@@ -30,7 +30,7 @@ services:
     # If you hit this: change the mapping below to e.g. "5433:5432" and set
     # POSTGRES_PORT=5433 in backend/.env to match.
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
