@@ -21,12 +21,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.session import Base
 from app.models.spam_prediction_log import GUID
+from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
 
 
 class SummaryLog(Base):
     __tablename__ = "summary_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+
+    # Phase 11 addition -- see spam_prediction_log.py's identical column
+    # for the full rationale (model-level default, no endpoint change).
+    organization_id: Mapped[str] = mapped_column(String(100), default=DEFAULT_ORGANIZATION_ID)
 
     summary: Mapped[str] = mapped_column(Text)
     summary_type: Mapped[str] = mapped_column(String(20))  # "extractive" | "abstractive"
