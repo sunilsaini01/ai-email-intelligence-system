@@ -41,6 +41,17 @@ from app.services.spam_service import SpamService, get_spam_service
 
 logger = logging.getLogger("app.routing")
 
+# Sentinel distinguishing "caller didn't supply this signal, compute it
+# normally" from "caller explicitly supplied None, i.e. this signal is
+# known-unavailable" -- see route()'s precomputed_* kwargs, added Phase 12
+# so the Orchestrator (app/agents/orchestrator.py) can reuse this class's
+# already-tested rule/composition logic WITHOUT re-running the five ML
+# calls a second time (they already ran once, as Kafka agents). Existing
+# callers (app/api/v1/endpoints/routing.py) pass nothing and get the exact
+# prior behavior -- this is purely additive, not a breaking change to the
+# existing seam docs/architecture.md describes.
+_NOT_PROVIDED = object()
+
 
 class RoutingService:
     def __init__(
@@ -62,13 +73,24 @@ class RoutingService:
         self._sentiment_service = sentiment_service
         self._intent_service = intent_service
 
-    def route(self, subject: str, body: str, sender_email: str = "") -> dict:
+    def route(
+        self,
+        subject: str,
+        body: str,
+        sender_email: str = "",
+        *,
+        precomputed_spam: dict | None = _NOT_PROVIDED,
+        precomputed_category: dict | None = _NOT_PROVIDED,
+        precomputed_intent: dict | None = _NOT_PROVIDED,
+        precomputed_sentiment: dict | None = _NOT_PROVIDED,
+        precomputed_priority: dict | None = _NOT_PROVIDED,
+    ) -> dict:
         subject = subject or ""
         body = body or ""
         unavailable: list[str] = []
 
-        spam_result = self._safe_call(
-            "spam", lambda: self._resolve_spam().classify(subject, body), unavailable
+        spam_result = self._use_or_fetch(
+            "spam", precomputed_spam, lambda: self._resolve_spam().classify(subject, body), unavailable
         )
         is_spam = spam_result["is_spam"] if spam_result else None
 
@@ -79,19 +101,24 @@ class RoutingService:
         # further evidence for a quarantined email is wasted work, not
         # extra caution.
         if not is_spam:
-            category_result = self._safe_call(
+            category_result = self._use_or_fetch(
                 "category",
+                precomputed_category,
                 lambda: self._resolve_category().classify(subject, body, sender_email=sender_email),
                 unavailable,
             )
-            intent_result = self._safe_call(
-                "intent", lambda: self._resolve_intent().analyze(subject, body), unavailable
+            intent_result = self._use_or_fetch(
+                "intent", precomputed_intent, lambda: self._resolve_intent().analyze(subject, body), unavailable
             )
-            sentiment_result = self._safe_call(
-                "sentiment", lambda: self._resolve_sentiment().analyze(subject, body), unavailable
+            sentiment_result = self._use_or_fetch(
+                "sentiment",
+                precomputed_sentiment,
+                lambda: self._resolve_sentiment().analyze(subject, body),
+                unavailable,
             )
-            priority_result = self._safe_call(
+            priority_result = self._use_or_fetch(
                 "priority",
+                precomputed_priority,
                 lambda: self._resolve_priority().classify(subject, body, sender_email=sender_email),
                 unavailable,
             )
@@ -227,6 +254,22 @@ class RoutingService:
 
     def _resolve_priority(self) -> PriorityService:
         return self._priority_service or get_priority_service()
+
+    @classmethod
+    def _use_or_fetch(
+        cls, name: str, precomputed: Any, fetch_fn: Callable[[], Any], unavailable: list[str]
+    ) -> Any | None:
+        """precomputed is _NOT_PROVIDED -> caller didn't supply this signal,
+        fetch it the normal way (_safe_call). precomputed is an explicit
+        None -> the Orchestrator already tried and the agent failed/wasn't
+        run; record it as unavailable the same way a raised exception
+        would, without calling fetch_fn again. Anything else -> use it
+        as-is, already computed."""
+        if precomputed is _NOT_PROVIDED:
+            return cls._safe_call(name, fetch_fn, unavailable)
+        if precomputed is None:
+            unavailable.append(name)
+        return precomputed
 
     @staticmethod
     def _safe_call(name: str, fn: Callable[[], Any], unavailable: list[str]) -> Any | None:
