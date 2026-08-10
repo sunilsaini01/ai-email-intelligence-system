@@ -25,6 +25,8 @@ from app.schemas.intent import (
     IntentPredictionRequest,
     IntentPredictionResponse,
 )
+from app.models.feedback_event import ACTION_CORRECTION
+from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_intent_feedback_logger
 from app.services.intent_service import (
     IntentService,
@@ -86,9 +88,10 @@ async def predict_intent(
 
 
 @router.post("/feedback", response_model=IntentFeedbackResponse)
-def submit_intent_feedback(
+async def submit_intent_feedback(
     request: IntentFeedbackRequest,
     feedback_logger: FeedbackLogger = Depends(get_intent_feedback_logger),
+    db: AsyncSession = Depends(get_db),
 ) -> IntentFeedbackResponse:
     feedback_id = feedback_logger.log_correction(
         subject=request.subject,
@@ -97,4 +100,18 @@ def submit_intent_feedback(
         corrected_label=request.corrected_label,
         comment=request.comment,
     )
+
+    try:
+        await record_feedback_event(
+            db,
+            module="intent",
+            action=ACTION_CORRECTION,
+            original_value=request.predicted_label,
+            corrected_value=request.corrected_label,
+            reviewer_id=request.reviewer_id,
+            reason=request.comment,
+        )
+    except Exception:
+        logger.warning("intent_feedback_event_log_failed", exc_info=True)
+
     return IntentFeedbackResponse(status="logged", feedback_id=feedback_id)
