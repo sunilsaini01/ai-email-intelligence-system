@@ -40,19 +40,27 @@ it yet" (`OPEN`) — a distinction real support workflows generally need —
 while remaining small enough to not invent a full ticketing state machine
 this project has no other infrastructure for.
 
-## No Automatic Transitions
+## No Automatic Transitions (True as of Phase 9; Partially Superseded by Phase 10)
 
 Every email defaults to `OPEN` at index time
-(`DEFAULT_RESOLUTION_STATUS = OPEN`). **Nothing in this codebase ever
-changes it automatically** — there is no agent-action layer, no
-"email replied to" detection, no auto-close-after-N-days logic. The only
-way status changes is an explicit, human-driven call to
+(`DEFAULT_RESOLUTION_STATUS = OPEN`). As of Phase 9, **nothing in this
+codebase ever changed it automatically** — there was no agent-action
+layer, no "email replied to" detection, no auto-close-after-N-days logic.
+The only way status changed was an explicit, human-driven call to
 `PATCH /api/v1/retrieval/emails/{id}/resolution`
-(`app/api/v1/endpoints/retrieval.py:update_resolution_status`). Presenting
-this as more automated than it is would misrepresent what this phase
-built — the PRD's own dashboard vision (§14.3, "SLA Compliance Rate")
-implies a fuller workflow than this minimal field provides; that fuller
-workflow is out of scope here.
+(`app/api/v1/endpoints/retrieval.py:update_resolution_status`).
+
+**Update (Post-Phase-10 fix #3)**: a second, narrower automatic path now
+exists — approving an Auto-Reply draft (`POST /api/v1/reply/{id}/approve`)
+best-effort marks that draft's `source_email_id` as `RESOLVED`, on the
+reasoning that an approved reply is the closest signal this codebase has
+to "this situation was handled." This is still not the fuller
+agent-action/SLA workflow the PRD's own dashboard vision (§14.3) implies
+— it only fires when a caller supplies `source_email_id` at generation
+time, and only for the current email being replied to, not any other
+`RESOLVED` transition path. See `docs/architecture_auto_reply.md`
+"Auto-Mark-Resolved on Approve" for the full record; this note exists so
+this document doesn't keep asserting something Phase 10 changed.
 
 ## Why Resolution Status Is Filtered Against Postgres, Not Vector Metadata
 
