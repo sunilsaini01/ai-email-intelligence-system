@@ -59,3 +59,12 @@ httpx==0.28.1
 # Windows dev environment this project targets -- see
 # docs/architecture_dashboard.md "PDF library".
 reportlab==4.5.1
+
+# Phase 12 (multi-agent architecture) additions only:
+# aiokafka -- async-native Kafka client, matching this project's fully-async
+# FastAPI/SQLAlchemy stack. Chosen over confluent-kafka specifically to
+# avoid another C-extension native build dependency on this project's
+# Windows dev environment, which has already hit repeated native-dependency
+# issues (torch, the transformers/pyarrow import-order crash worked around
+# in app/main.py) -- see docs/kafka_architecture.md "Client Library Decision".
+aiokafka==0.13.0
