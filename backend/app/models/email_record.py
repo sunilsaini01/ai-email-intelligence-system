@@ -73,6 +73,14 @@ class EmailRecord(Base):
     # not an error.
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     department: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Phase 11 addition -- same caller-supplied-snapshot pattern as
+    # category/department above, not a new concept. Exists specifically so
+    # the dashboard's SLA feature (docs/architecture_dashboard.md "SLA
+    # definition") can compute priority-tiered SLA status from THIS table
+    # alone, with no join to priority_prediction_logs required. NULL for
+    # any email indexed without a priority supplied -- a legitimate,
+    # excluded-and-disclosed state, not an error.
+    priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     resolution_status: Mapped[str] = mapped_column(String(20), default=DEFAULT_RESOLUTION_STATUS)
 
@@ -82,6 +90,16 @@ class EmailRecord(Base):
     vector_collection: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)  # soft delete, Step 20
+
+    # Phase 11 addition. Deliberately NOT the same as `updated_at` below,
+    # which changes on ANY field edit -- using updated_at for "time to
+    # resolve" would silently drift every time an unrelated field (e.g.
+    # category) is re-indexed after resolution. Set exactly once by
+    # EmailRepository.update_resolution_status when the new status is
+    # RESOLVED, and cleared back to NULL if status ever moves off RESOLVED
+    # (so a later re-resolution recomputes it rather than keeping a stale
+    # timestamp from a prior resolution cycle).
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
