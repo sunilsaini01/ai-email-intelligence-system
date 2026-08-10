@@ -35,6 +35,7 @@ import pandas  # noqa: F401,E402
 import sklearn  # noqa: F401,E402
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -171,6 +172,16 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Phase 11: allows the frontend/ dashboard (a different origin in dev,
+    # e.g. localhost:5173) to call this API and open its WebSocket at all.
+    # Explicit origin list, not "*" -- see Settings.CORS_ORIGINS docstring.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGIN_LIST,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.add_middleware(RequestLoggingMiddleware)
     register_exception_handlers(app)
 
