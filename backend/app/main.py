@@ -41,6 +41,7 @@ from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.middleware.exception_handlers import register_exception_handlers
 from app.middleware.request_logging import RequestLoggingMiddleware
+from app.services.auto_reply_service import get_auto_reply_service
 from app.services.category_service import get_category_service
 from app.services.intent_service import get_intent_service
 from app.services.priority_service import get_priority_service
@@ -119,15 +120,40 @@ async def lifespan(app: FastAPI):
     # retrieval: RetrievalService itself is lazy like RoutingService (same
     # per-signal-failure-isolation reasoning), so get_retrieval_service()
     # alone warms up nothing. Unlike routing, this one's worth forcing
-    # further: the default embedder (TfidfEmbedder) loads a real artifact
-    # (artifacts/tfidf_embedder.joblib) whose cost belongs at startup, not
-    # a live caller's first /retrieval/index or /retrieval/search request
-    # — same reasoning as every classifier service above.
+    # further: the default embedder (MiniLmEmbedder as of Phase 10 — see
+    # docs/architecture_auto_reply.md "Embedder Decision") downloads/loads
+    # real transformer weights whose cost belongs at startup, not a live
+    # caller's first /retrieval/index, /retrieval/search, or /reply/generate
+    # request — same reasoning as every classifier service above. Failure
+    # here (e.g. no network on first-ever run to fetch the weights) degrades
+    # gracefully, same as every other warmup in this loop.
+    # Both _resolve_embedder() and _resolve_vector_store() are memoized on
+    # the RetrievalService singleton (fixed during Phase 10 end-to-end
+    # testing -- they used to reconstruct on every call, invisible with
+    # TF-IDF's cheap construction, but a real measured ~1.4s/request cost
+    # once MiniLM became the default). Warming BOTH here, not just the
+    # embedder: Chroma's PersistentClient has its own real, measured
+    # multi-second cold start independent of the embedding model (ONNX
+    # runtime / hnswlib index setup), so warming only the embedder still
+    # left a live caller's first request to pay Chroma's cold start alone.
     try:
-        get_retrieval_service()._resolve_embedder()  # noqa: SLF001 -- warmup-only internal reach
+        service = get_retrieval_service()
+        service._resolve_embedder()  # noqa: SLF001 -- warmup-only internal reach
+        service._resolve_vector_store()  # noqa: SLF001 -- warmup-only internal reach
         logger.info("retrieval_service_warmed_up")
     except Exception:
         logger.warning("retrieval_service_warmup_failed", exc_info=True)
+
+    # auto_reply: AutoReplyService() itself is cheap (no network call);
+    # forcing _resolve_llm_provider() here only constructs the Groq SDK
+    # client object (also no network call) but DOES surface a missing
+    # GROQ_API_KEY loudly at startup instead of on a live caller's first
+    # /reply/generate request -- same reasoning as every warmup above.
+    try:
+        get_auto_reply_service()._resolve_llm_provider()  # noqa: SLF001 -- warmup-only internal reach
+        logger.info("auto_reply_service_warmed_up")
+    except Exception:
+        logger.warning("auto_reply_service_warmup_failed", exc_info=True)
 
     yield
 
