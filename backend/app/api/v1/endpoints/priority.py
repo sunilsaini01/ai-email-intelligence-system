@@ -28,6 +28,8 @@ from app.schemas.priority import (
     PriorityPredictionRequest,
     PriorityPredictionResponse,
 )
+from app.models.feedback_event import ACTION_CORRECTION
+from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_priority_feedback_logger
 from app.services.priority_service import (
     PriorityService,
@@ -97,9 +99,10 @@ async def predict_priority(
 
 
 @router.post("/feedback", response_model=PriorityFeedbackResponse)
-def submit_priority_feedback(
+async def submit_priority_feedback(
     request: PriorityFeedbackRequest,
     feedback_logger: FeedbackLogger = Depends(get_priority_feedback_logger),
+    db: AsyncSession = Depends(get_db),
 ) -> PriorityFeedbackResponse:
     feedback_id = feedback_logger.log_correction(
         subject=request.subject,
@@ -108,4 +111,18 @@ def submit_priority_feedback(
         corrected_label=request.corrected_label,
         comment=request.comment,
     )
+
+    try:
+        await record_feedback_event(
+            db,
+            module="priority",
+            action=ACTION_CORRECTION,
+            original_value=request.predicted_label,
+            corrected_value=request.corrected_label,
+            reviewer_id=request.reviewer_id,
+            reason=request.comment,
+        )
+    except Exception:
+        logger.warning("priority_feedback_event_log_failed", exc_info=True)
+
     return PriorityFeedbackResponse(status="logged", feedback_id=feedback_id)
