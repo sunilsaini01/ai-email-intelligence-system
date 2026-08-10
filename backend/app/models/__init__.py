@@ -19,6 +19,7 @@ from app.models.category_prediction_log import CategoryPredictionLog
 from app.models.email_record import EmailRecord
 from app.models.intent_prediction_log import IntentPredictionLog
 from app.models.priority_prediction_log import PriorityPredictionLog
+from app.models.reply_draft import ReplyDraft
 from app.models.routing_decision_log import RoutingDecisionLog
 from app.models.sentiment_prediction_log import SentimentPredictionLog
 from app.models.spam_prediction_log import SpamPredictionLog
@@ -29,6 +30,7 @@ __all__ = [
     "EmailRecord",
     "IntentPredictionLog",
     "PriorityPredictionLog",
+    "ReplyDraft",
     "RoutingDecisionLog",
     "SentimentPredictionLog",
     "SpamPredictionLog",
