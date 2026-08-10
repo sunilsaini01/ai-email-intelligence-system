@@ -38,3 +38,16 @@ vaderSentiment==3.3.2
 chromadb==1.5.9
 presidio-analyzer==2.2.363
 presidio-anonymizer==2.2.363
+
+# Phase 10 (auto-reply generation) additions only:
+# groq -- official Python SDK for the Groq LLM API (app/inference/groq_provider.py).
+# Groq chosen over the PRD's own OpenAI/Anthropic suggestion per an explicit
+# project-owner decision -- see docs/architecture_auto_reply.md "LLM Provider
+# Decision". Real API calls happen ONLY through GroqProvider, never in the
+# default test suite (FakeLLMProvider is used there) -- see docs/security_auto_reply.md.
+groq==1.6.0
+# httpx -- was already present transitively (groq's own dependency, and
+# fastapi's TestClient), now declared explicitly because
+# app/inference/ollama_provider.py (Post-Phase-10 fix #5) imports and uses
+# it directly, not just transitively.
+httpx==0.28.1
