@@ -1,6 +1,6 @@
 # AI Email Intelligence System
 
-> **Status:** Phase 9 of 15 (PRD phase numbering). Modular monolith, no
+> **Status:** Phase 10 of 15 (PRD phase numbering). Modular monolith, no
 > Kafka/K8s/microservices yet — deliberately, see `docs/architecture.md`.
 > Full PRD: [`project document/PRD_AI_Email_Intelligence_System.md`](project%20document/PRD_AI_Email_Intelligence_System.md).
 
@@ -17,8 +17,9 @@
 | 7A | Sentiment Analysis | 🟡 Zero-shot VADER lexicon scorer served, **no human-labelled email sentiment data exists at all — unvalidated on email domain**. See `docs/data_audit_sentiment.md`. |
 | 7B | Intent Detection | 🟡 Pipeline complete (multi-label), **trained on synthetic data — not PRD-compliant**, and one class (Escalation) demonstrably unreliable, not just unvalidated. See `docs/data_audit_intent.md` / `docs/error_analysis_intent.md`. |
 | 8 | Email Routing Engine | 🟡 Deterministic rule engine composing Spam/Category/Intent/Sentiment/Priority, served and audit-logged. **Not PRD-compliant** — no routing-outcome ground truth exists, and **inherits every upstream module's data-quality caveat**. Also **discovered a new, higher-priority finding**: Spam's recall-tuned threshold over-fires on ordinary business email outside its evaluation domain, quarantining most of Phase 8's own qualitative test sample before department routing runs at all. See `docs/model_cards/routing.md` / `docs/error_analysis_routing.md`. |
-| 9 | Similar Email Retrieval / RAG Foundation | 🟡 Vector similarity search (ChromaDB, local) over PII-scrubbed embeddings, metadata-filterable by category/department/resolution-status, served and audit-logged. **New infrastructure**: this project's first canonical cross-module email entity, and its first wired-in PII anonymization. **Not PRD-compliant** — no retrieval-outcome ground truth exists. Two real bugs found and fixed during this phase's own testing: a TF-IDF vocabulary-pollution bug (all-zero similarity scores) and a Windows-specific import-order crash that segfaulted the *entire* test suite. See `docs/model_cards/embedding_retrieval.md` / `docs/error_analysis_retrieval.md`. |
-| 10–15 | Auto-Reply, Dashboard, CI/CD, Cloud, MLOps | ⬜ Not started |
+| 9 | Similar Email Retrieval / RAG Foundation | 🟡 Vector similarity search (ChromaDB, local) over PII-scrubbed embeddings, metadata-filterable by category/department/resolution-status, served and audit-logged. **New infrastructure**: this project's first canonical cross-module email entity, and its first wired-in PII anonymization. **Not PRD-compliant** — no retrieval-outcome ground truth exists. Two real bugs found and fixed during this phase's own testing: a TF-IDF vocabulary-pollution bug (all-zero similarity scores) and a Windows-specific import-order crash that segfaulted the *entire* test suite. **Default embedder changed to MiniLM in Phase 10** (see that row) — this row's TF-IDF-as-default framing is historical. See `docs/model_cards/embedding_retrieval.md` / `docs/error_analysis_retrieval.md`. |
+| 10 | Auto-Reply Generation | 🟡 RAG + LLM draft-reply generation (Groq/`llama-3.3-70b-versatile`, a project-owner decision — not the PRD's own OpenAI/Anthropic suggestion), draft-only, human approve/edit/reject required (FR-49/FR-51 enforced architecturally — no send capability exists anywhere in the pipeline). **Not PRD-compliant** — no Human Acceptance Rate data exists (requires real agents/real traffic). A real, disclosed hallucination example (fabricated support hours on an ungrounded query) and a real performance bug (embedder/vector-store reconstructed on every call, found and fixed via this phase's own real-Postgres-and-real-Groq end-to-end testing) were both found this phase. See `docs/model_cards/auto_reply.md` / `docs/error_analysis_auto_reply.md`. |
+| 11–15 | Dashboard, CI/CD, Cloud, MLOps | ⬜ Not started |
 
 **Read this before trusting any priority-classification, categorization,
 summarization, sentiment, intent, or routing metric**: Phases 4, 5, and 7B's
@@ -42,16 +43,24 @@ failure modes are disclosed everywhere they matter —
 `docs/data_audit_intent.md`, the respective model cards,
 `docs/categorization_label_quality_report.md`,
 `docs/error_analysis_sentiment.md` / `docs/error_analysis_intent.md` /
-`docs/error_analysis_routing.md` / `docs/error_analysis_retrieval.md`,
+`docs/error_analysis_routing.md` / `docs/error_analysis_retrieval.md` /
+`docs/error_analysis_auto_reply.md`,
 `docs/ml_data_maturity_roadmap.md`, each dataset's own `run_metadata.json`
 — because presenting any of these as real-world evidence would be
 actively misleading. Spam's metrics are real and PRD-relevant *on their
 own evaluation domain*; priority's, categorization's, summarization's,
-sentiment's, intent's, routing's, and retrieval's are pipeline/model-
-validation only, not PRD-compliance evidence. Retrieval (Phase 9) has no
-label-fabrication problem of its own (embedding fitting is unsupervised)
-but has no relevance-outcome ground truth either — a different, but
-equally real, evidentiary gap.
+sentiment's, intent's, routing's, retrieval's, and auto-reply's are
+pipeline/model-validation only, not PRD-compliance evidence. Retrieval
+(Phase 9) has no label-fabrication problem of its own (embedding fitting
+is unsupervised) but has no relevance-outcome ground truth either — a
+different, but equally real, evidentiary gap. Auto-Reply (Phase 10) is
+the first module calling a third-party LLM this project does not train
+or validate at all — its evidentiary gap is a different kind again: no
+Human Acceptance Rate data exists (requires real agents/real traffic),
+and one real, disclosed hallucination example (a confidently fabricated,
+ungrounded detail) was directly observed during this phase's own
+qualitative testing against the real Groq API — see
+`docs/error_analysis_auto_reply.md`.
 
 ## Architecture (Completed Work)
 
@@ -214,9 +223,12 @@ model of any kind, trained or zero-shot — `RoutingSvc` connects (dashed,
 composition, not inheritance) to all five other services' boxes instead,
 the first and only such fan-out in this diagram, and its own DB row stores
 which rules fired and every composed signal's value, not a prediction of
-its own. Modules 9–15 (RAG, Auto-Reply, Dashboard, ...) aren't built yet
-and are deliberately left off this diagram rather than sketched as a
-guess.
+its own. Modules 9 and 10 (RAG foundation, Auto-Reply) are now built but
+deliberately left off this diagram rather than redrawn as a rough
+approximation this phase — see `docs/architecture_rag.md` /
+`docs/architecture_auto_reply.md` for their own request-flow diagrams
+instead. Modules 11–15 (Dashboard, CI/CD, Cloud, MLOps) genuinely aren't
+built yet.
 
 ## What's Here
 
@@ -278,7 +290,23 @@ higher-priority finding beyond the four inherited synthetic-data
 caveats — Spam's recall-tuned threshold, validated on spam/ham corpora,
 over-fires on ordinary business email and quarantined most of a 20-example
 test set before department routing ran at all (`docs/error_analysis_
-routing.md`).
+routing.md`). Similar Email Retrieval (Phase 9, `POST /api/v1/retrieval/*`)
+composes a vector embedder (MiniLM as of Phase 10 — TF-IDF's demonstrated
+paraphrase-blindness made it unsuitable once Auto-Reply started depending
+on retrieval quality; see `docs/architecture_auto_reply.md` "Embedder
+Decision") and ChromaDB, PII-scrubbed before embedding, filterable by
+category/department/resolution-status. Auto-Reply Generation (Phase 10,
+`POST /api/v1/reply/*`) is this project's first module calling a paid
+external LLM (Groq/`llama-3.3-70b-versatile`, a confirmed project-owner
+decision, not the PRD's own OpenAI/Anthropic suggestion) — it composes
+Retrieval's top-3 similar *resolved* emails as RAG context, re-anonymizes
+everything (current email AND retrieved context) before it reaches the
+LLM, and produces a draft-only reply agents must explicitly approve, edit,
+or reject (FR-49/FR-51 enforced architecturally — no send capability
+exists anywhere in this codebase). A real, disclosed hallucination example
+and a real, fixed performance bug (found via this phase's own testing
+against a real Postgres container and the real Groq API, not just mocks)
+are both documented in `docs/error_analysis_auto_reply.md`.
 
 **Data pipeline**: DVC-versioned datasets, a dataset registry that records
 domain-match/trust-level per source (so a low-quality dataset can't
@@ -287,14 +315,19 @@ ingestion, task-aware preprocessing (`EmailPreprocessor` with per-task
 configs), reusable content/metadata feature extractors
 (`app/feature_engineering/`).
 
-**Testing**: 327 tests (+1 opt-in slow integration test, `RUN_SLOW_TESTS=1`)
+**Testing**: 389 tests (+1 opt-in slow integration test, `RUN_SLOW_TESTS=1`)
 across data validation, model behavior, API contracts, security, and DB
 persistence — `pytest`, `pytest-asyncio`, `aiosqlite` for DB tests without
-a live Postgres. Migrations are additionally verified against a real,
-disposable PostgreSQL 16 container (not just SQLite) whenever the schema
-changes — see `docs/architecture_rag.md` "Performance" and
-`docs/vector_index_consistency.md` for the most
-recent example (upgrade → downgrade → upgrade round-trip).
+a live Postgres. No paid API key is required for this suite — Auto-Reply's
+LLM calls are always faked (`FakeLLMProvider`) or exercised against a
+monkeypatched `groq.Groq` client using real exception types, never a real
+network call; the only real-Groq-API code path is the manual, opt-in
+`scripts/qualitative_eval_auto_reply.py`. Migrations are additionally
+verified against a real, disposable PostgreSQL 16 container (not just
+SQLite) whenever the schema changes — see
+`docs/phase10_requirements_traceability.md` for the most recent example
+(upgrade → downgrade → upgrade round-trip, plus a real end-to-end request
+through the actual FastAPI app against that same container).
 
 ## Quickstart
 
@@ -359,27 +392,27 @@ around it (map to a different host port, e.g. `5433:5432`, and set
 ```
 backend/
 ├── app/
-│   ├── api/v1/endpoints/       # spam.py, priority.py, category.py, summarization.py, sentiment.py, intent.py, routing.py, retrieval.py, health.py
+│   ├── api/v1/endpoints/       # spam.py, priority.py, category.py, summarization.py, sentiment.py, intent.py, routing.py, retrieval.py, reply.py, health.py
 │   ├── core/                    # config, logging — cross-cutting
 │   ├── data_ingestion/          # corpus loaders + dataset_registry.py
-│   ├── database/                # async session, repositories/
+│   ├── database/                # async session, repositories/ (incl. reply_draft_repository.py)
 │   ├── evaluation/              # model_evaluator (classification) + summarization_evaluator (ROUGE)
 │   ├── feature_engineering/     # content/metadata feature extractors, keyword lexicons, feature_schema
-│   ├── inference/                # SpamPredictor/PriorityPredictor/CategoryPredictor/VaderSentimentPredictor/IntentPredictor/TfidfEmbedder/MiniLmEmbedder + Protocol backends
+│   ├── inference/                # SpamPredictor/PriorityPredictor/CategoryPredictor/VaderSentimentPredictor/IntentPredictor/TfidfEmbedder/MiniLmEmbedder + Protocol backends; llm_provider.py (Protocol) + groq_provider.py + fake_llm_provider.py (Module 10)
 │   ├── middleware/               # request logging, global error handling
-│   ├── models/                   # SQLAlchemy ORM (*_prediction_log.py, summary_log.py, routing_decision_log.py, email_record.py)
-│   ├── nlp/                       # extractive/abstractive summarizers, grounding, thread, chunking, intent_entities — generation/extraction, not classification
+│   ├── models/                   # SQLAlchemy ORM (*_prediction_log.py, summary_log.py, routing_decision_log.py, email_record.py, reply_draft.py)
+│   ├── nlp/                       # extractive/abstractive summarizers, grounding, thread, chunking, intent_entities, reply_prompt.py (Module 10) — generation/extraction, not classification
 │   ├── pipeline/                  # PipelineConfig/Factory, MLPipeline, PriorityMLPipeline, CategoryMLPipeline, IntentMLPipeline
 │   ├── preprocessing/             # EmailPreprocessor + task-specific configs
 │   ├── retrieval/                 # Module 9 pure logic: identity.py, embedding_input.py, vector_store.py (+ InMemory fake), chroma_vector_store.py, resolution_status.py, tenant.py — no service dependency, independently testable
 │   ├── routing/                   # Module 8 pure logic: rules.py, keyword_matcher.py, department_taxonomy.py, sender_domain.py, signal_reliability.py — no service dependency, independently testable
-│   ├── schemas/                   # Pydantic request/response contracts
-│   ├── security/                  # pii_anonymizer.py (Presidio-backed, lazy-loaded — wired in by Module 9, dormant since early in this project before that)
-│   ├── services/                  # spam/priority/category/summarization/sentiment/intent/routing/retrieval_service, feedback_service
+│   ├── schemas/                   # Pydantic request/response contracts (incl. auto_reply.py)
+│   ├── security/                  # pii_anonymizer.py (Presidio-backed, lazy-loaded — wired in by Module 9, dormant since early in this project before that; reused by Module 10 for a new obligation — see docs/architecture_auto_reply.md "PII")
+│   ├── services/                  # spam/priority/category/summarization/sentiment/intent/routing/retrieval_service, auto_reply_service.py (Module 10), feedback_service
 │   ├── training/                  # Trainer, ArtifactManager
 │   └── main.py                    # app factory + startup warm-up (also: a documented sklearn/pandas import-order workaround — see docs/error_analysis_retrieval.md "Incident 2")
 ├── alembic/                        # DB migrations
-├── scripts/                        # training + dataset generation scripts + DB-hang investigation scripts + qualitative_eval_sentiment.py / qualitative_eval_intent.py / qualitative_eval_routing.py / qualitative_eval_retrieval.py / benchmark_embedding_models.py
+├── scripts/                        # training + dataset generation scripts + DB-hang investigation scripts + qualitative_eval_sentiment.py / qualitative_eval_intent.py / qualitative_eval_routing.py / qualitative_eval_retrieval.py / qualitative_eval_auto_reply.py / benchmark_embedding_models.py
 ├── tests/
 ├── requirements.txt
 └── requirements-dev.txt
@@ -397,6 +430,7 @@ docs/
 ├── architecture_intent.md
 ├── architecture_routing.md
 ├── architecture_rag.md
+├── architecture_auto_reply.md
 ├── data_audit_priority.md              # data strategy decision — read before priority's model card
 ├── data_audit_categorization.md        # data strategy decision — read before categorization's model card
 ├── data_audit_summarization.md         # data strategy decision — read before summarization's model card
@@ -411,6 +445,9 @@ docs/
 ├── error_analysis_intent.md
 ├── error_analysis_routing.md
 ├── error_analysis_retrieval.md
+├── error_analysis_auto_reply.md
+├── security_auto_reply.md
+├── rag_evaluation_auto_reply.md
 ├── routing_taxonomy.md
 ├── routing_signal_reliability.md
 ├── routing_conflict_resolution.md
@@ -430,6 +467,7 @@ docs/
 ├── phase7b_intent_requirements_traceability.md
 ├── phase8_requirements_traceability.md
 ├── phase9_requirements_traceability.md
+├── phase10_requirements_traceability.md
 ├── technical_debt/
 │   └── database_write_hang.md          # investigated, mitigated, NOT root-caused — read before assuming DB writes can't hang
 ├── model_cards/
@@ -474,12 +512,17 @@ project document/
 - [`docs/vector_tenant_isolation.md`](docs/vector_tenant_isolation.md) — the confirmed decision (Option C): structural tenant-metadata isolation now, real authentication still deferred since Phase 1.
 - [`docs/phase9_pii_embedding_strategy.md`](docs/phase9_pii_embedding_strategy.md) — why only the text going INTO the vector store is PII-anonymized (Presidio), while Postgres storage stays raw like every other module — and why that split, not "anonymize everything," is the right line.
 - [`docs/embedding_input_strategy.md`](docs/embedding_input_strategy.md) — what exactly gets embedded (subject + body, cleaned, nothing else) and why no field-weighting scheme was built.
-- [`docs/embedding_model_decision.md`](docs/embedding_model_decision.md) — the measured TF-IDF vs. all-MiniLM-L6-v2 comparison (MiniLM correctly separated 6/6 paraphrase pairs, TF-IDF only 3/6, with literal zero-overlap scores on the misses) — and why TF-IDF still ships as the default anyway (zero network dependency, deterministic tests), a disclosed trade-off, not a hidden one.
+- [`docs/embedding_model_decision.md`](docs/embedding_model_decision.md) — the measured TF-IDF vs. all-MiniLM-L6-v2 comparison (MiniLM correctly separated 6/6 paraphrase pairs, TF-IDF only 3/6, with literal zero-overlap scores on the misses) — written when TF-IDF still shipped as Phase 9's own default; **Phase 10 switched the default to MiniLM** once Auto-Reply started depending on retrieval quality — see `docs/architecture_auto_reply.md` "Embedder Decision" for why, and why the timing was safe (no real data to migrate yet).
 - [`docs/vector_store_decision.md`](docs/vector_store_decision.md) — ChromaDB vs. Pinecone/FAISS/Qdrant, the `VectorStore` Protocol abstraction, and why cosine similarity was explicitly configured rather than left at Chroma's default.
 - [`docs/embedding_versioning.md`](docs/embedding_versioning.md) / [`docs/vector_index_consistency.md`](docs/vector_index_consistency.md) — how embedding-model upgrades and Postgres/vector-store consistency (including soft-delete) are handled without Kafka or an outbox pattern.
 - [`docs/error_analysis_retrieval.md`](docs/error_analysis_retrieval.md) — two real engineering incidents found and fixed during this phase's own testing (a TF-IDF vocabulary-pollution bug producing all-zero similarity scores, and a Windows-specific import-order crash that segfaulted the entire test suite), plus the qualitative retrieval gold-set results.
 - [`docs/phase9_requirements_traceability.md`](docs/phase9_requirements_traceability.md) — FR-43 to FR-47 extracted directly from the PRD, mapped to design/implementation/test/evidence.
 - [`docs/architecture_rag.md`](docs/architecture_rag.md) / [`docs/model_cards/embedding_retrieval.md`](docs/model_cards/embedding_retrieval.md)
+- [`docs/security_auto_reply.md`](docs/security_auto_reply.md) — PII re-anonymization before every LLM call (a new obligation beyond Phase 9's own scrubbing), prompt-injection defenses (delimited data sections + a heuristic pre-filter), API-key handling, and a static, AST-based verification that no email-sending capability exists anywhere in the pipeline.
+- [`docs/rag_evaluation_auto_reply.md`](docs/rag_evaluation_auto_reply.md) — separates retrieval-quality evidence (inherited from Phase 9) from generation-quality evidence (new this phase, a small manually-read sample against the real Groq API), and states plainly what is NOT YET MEASURED (Human Acceptance Rate).
+- [`docs/error_analysis_auto_reply.md`](docs/error_analysis_auto_reply.md) — a real performance bug found and fixed via this phase's own real-Postgres-and-real-Groq end-to-end testing (the default embedder/vector store were being reconstructed on every call), plus a real, disclosed hallucination example from the qualitative script's real API output.
+- [`docs/phase10_requirements_traceability.md`](docs/phase10_requirements_traceability.md) — FR-48 to FR-52 extracted directly from the PRD, mapped to design/implementation/test/evidence, including real measured latency numbers.
+- [`docs/architecture_auto_reply.md`](docs/architecture_auto_reply.md) / [`docs/model_cards/auto_reply.md`](docs/model_cards/auto_reply.md)
 - [`docs/technical_debt/database_write_hang.md`](docs/technical_debt/database_write_hang.md) — a real, reproduced DB-write hang under the live Windows request path; seven isolation experiments ruled out asyncpg, bare asyncio, SQLAlchemy alone, and `BaseHTTPMiddleware` as the sole cause; root cause still not found. Mitigated (bounded, not eliminated), not solved — read before assuming a DB timeout in this codebase can't still hang.
 - [`docs/git_workflow.md`](docs/git_workflow.md) — branching, commit conventions.
 
@@ -509,38 +552,37 @@ project document/
 - No routing-outcome ground truth exists — "Routing Accuracy > 92%" (PRD §14.1) is not measured and cannot be, honestly, until a real annotated routing-outcome dataset exists. See `docs/model_cards/routing.md` "Evaluation."
 - **No retrieval-outcome ground truth exists** — same class of gap as routing, but retrieval's embedding *fitting* itself is unsupervised (no labels used at all), a genuinely different, better evidentiary position than Priority/Category/Intent's fabricated-label problem. See `docs/model_cards/embedding_retrieval.md`.
 - **Two real bugs were found and fixed during Phase 9's own testing**: a TF-IDF vocabulary-pollution bug (the fitted embedder's vocabulary was dominated by HTML fragments and mailing-list noise; every similarity score came back exactly 0.0 before the fix), and a Windows-specific import-order crash between `transformers`/`scikit-learn`/`pandas`/`pyarrow` that segfaulted the *entire* test suite, not just Phase 9's own tests. Both fixed and verified; see `docs/error_analysis_retrieval.md`.
-- **TF-IDF ships as retrieval's default embedder despite a demonstrated quality gap** — a measured comparison found it structurally blind to paraphrase (3/6 vs. MiniLM's 6/6 on hand-written pairs, with literal zero-overlap scores on the misses). Kept as the default for zero-network-dependency and test-suite determinism, not because it's better — a disclosed trade-off flagged for reconsideration in Phase 10. See `docs/embedding_model_decision.md`.
-- Retrieval indexing is not auto-triggered after Spam/Category/Routing predictions — FR-43's "every processed email" is a capability this phase built, not an automatic behavior wired into the existing pipeline yet. See `docs/architecture_rag.md` "Not Auto-Wired to Upstream Endpoints."
+- **TF-IDF was Phase 9's own default embedder despite a demonstrated quality gap** — a measured comparison found it structurally blind to paraphrase (3/6 vs. MiniLM's 6/6 on hand-written pairs, with literal zero-overlap scores on the misses). **Phase 10 switched the structural default to MiniLM** once Auto-Reply started depending on retrieval quality — see `docs/architecture_auto_reply.md` "Embedder Decision" and `docs/embedding_model_decision.md`.
+- Retrieval indexing is not auto-triggered after Spam/Category/Routing predictions — FR-43's "every processed email" is a capability this phase built, not an automatic behavior wired into the existing pipeline yet. See `docs/architecture_rag.md` "Not Auto-Wired to Upstream Endpoints." **This now also affects Phase 10**: Auto-Reply's RAG context can only ever be as populated as whatever has been manually indexed.
 - No real tenant authentication exists for retrieval (same gap as everywhere else in this codebase since Phase 1) — cross-tenant isolation is structural (the code cannot search across organizations even by omission) but not access-controlled. See `docs/vector_tenant_isolation.md`.
-- Resolution status (FR-46) is an invented, minimal 4-state taxonomy — the PRD names the filter requirement but never defines its possible values anywhere. See `docs/resolution_status_design.md`.
+- Resolution status (FR-46) is an invented, minimal 4-state taxonomy — the PRD names the filter requirement but never defines its possible values anywhere. See `docs/resolution_status_design.md`. **This now also directly limits Phase 10**: nothing in this codebase auto-transitions status, so real `RESOLVED` context for Auto-Reply is likely rare in practice today — see `docs/architecture_auto_reply.md` "Resolved-Email Data Reality."
+- **No Human Acceptance Rate data exists for Auto-Reply** (PRD's own primary metric, >60% target) — requires real agents using the approve/edit/reject endpoints against real traffic, which does not exist yet. See `docs/model_cards/auto_reply.md`.
+- **A real, disclosed hallucination example was found during Phase 10's own qualitative testing against the real Groq API**: given a query with zero grounding, the model produced a confident, specific-sounding but entirely fabricated detail (invented support hours). FR-49's human-review requirement is structural specifically because of this class of risk — no generation-policy gate in this phase catches "the model invented a plausible-sounding but ungrounded fact." See `docs/error_analysis_auto_reply.md`.
+- **A real performance bug was found and fixed during Phase 10's own end-to-end testing**: `RetrievalService`'s default embedder/vector store were being reconstructed on every call (invisible to any unit test, since those always inject an explicit embedder) — a ~1.4s/request cost once MiniLM became the default, found only by running the real app against a real Postgres container and the real Groq API. Fixed by memoizing both; re-verified directly (before: ~1.4-5.8s/request; after: ~17-19ms warm). See `docs/error_analysis_auto_reply.md`.
+- **Update**: Ollama's local-fallback (named in the PRD's own ADR-002) is now implemented — `OllamaProvider` + `FallbackLLMProvider`, triggered specifically on a Groq 429/503. Verified against a real, locally-running Ollama server; one disclosed finding from that verification: a cold Ollama model load took ~11s, which by itself can exceed FR-50's 10s budget if the fallback fires against an unloaded model — no Ollama pre-warming was built. See `docs/architecture_auto_reply.md` "Ollama Fallback."
+- **Update**: a hallucination-mitigation confidence gate, Human Acceptance Rate tracking (`edit_distance` column + structured review-action logs), and an auto-mark-resolved-on-approve mechanism (closing Phase 9's resolution-status gap gradually) were all added after the initial Phase 10 report — see `docs/architecture_auto_reply.md` for all three.
+- No real tenant authentication exists for Auto-Reply either (same standing gap since Phase 1) — `reviewer_id`/`organization_id` on approve/edit/reject are caller-supplied, not verified.
 
-## Next (Phase 10)
+## Next (Phase 11)
 
-Auto Reply Generation (Module 10 — FR-48 to FR-51): generate a draft reply
-using an email plus its top-3 similar resolved emails (now buildable on
-top of Phase 9's retrieval — RAG context has somewhere to come from for
-the first time), draft-only by default (FR-49, never auto-sent), a 10s
-generation budget (FR-50), and an agent approve/edit/reject flow (FR-51).
+Dashboard & Analytics (Module 11): the PRD's own real-time triage UI —
+a queue view surfacing Priority/Category/Sentiment/Intent/Routing's
+existing outputs, SLA-compliance tracking against Priority's levels, and
+the human feedback/correction UI every module's `*/feedback` endpoint has
+been quietly waiting for since Phase 3. The first phase in this project
+that is primarily frontend work rather than a new ML/backend module —
+worth an explicit scoping conversation before starting (React per the
+PRD's own stack, or a lighter admin-panel approach given no real users
+exist yet) the same way Phase 9/10 both flagged their own open questions
+before implementation began.
 
-**This is the first phase that plausibly needs a real external LLM API**
-(the PRD names GPT-4o/Claude, with an Ollama local fallback already
-flagged in its own risk table) — flag this explicitly before any
-implementation begins, the same way Phase 9 flagged that it needed none.
-Unlike every phase so far, "no paid API required" may not be achievable
-here without a materially worse feature (a local-only open-weight model
-generating draft replies, likely lower quality than the PRD's own named
-choices) — worth an explicit decision with the project owner up front,
-not assumed either way.
-
-Also worth deciding explicitly before starting, the same way Phase 8/9
-did for their own open questions: whether Phase 9's retrieval needs to be
-auto-wired into the existing pipeline first (`docs/architecture_rag.md`
-"Not Auto-Wired to Upstream Endpoints") so Auto-Reply's RAG context is
-populated automatically rather than only for manually-indexed emails, and
-whether to switch retrieval's default embedder from TF-IDF to MiniLM
-before building a feature that depends on retrieval quality
-(`docs/embedding_model_decision.md`) — a draft reply built from
-paraphrase-blind "similar" emails would inherit that weakness directly.
+Also worth deciding explicitly before starting, the same way Phase 8/9/10
+did for their own open questions: whether to close Phase 9's "not
+auto-wired" gap first (so Auto-Reply's RAG context and the dashboard's
+queue both reflect real, automatically-indexed data rather than only
+manually-indexed test cases), and whether any real usage (even informal,
+by the project owner) should happen before Phase 11 so Auto-Reply's
+Human Acceptance Rate has its first real data point.
 
 Still blocked, same as every phase since 4, on the annotation effort
 tracked in `docs/ml_data_maturity_roadmap.md` before more ML modules
