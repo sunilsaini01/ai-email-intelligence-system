@@ -131,6 +131,28 @@ class Settings(BaseSettings):
     LOW_CONFIDENCE_THRESHOLD_SINGLE_LABEL: float = Field(default=0.6)  # spam/priority/sentiment/routing
     LOW_CONFIDENCE_THRESHOLD_MULTI_LABEL: float = Field(default=0.5)  # category/intent
 
+    # --- Phase 12 (Multi-Agent Architecture) — Kafka ---
+    # docker-compose's apache/kafka service, KRaft mode, single broker --
+    # see docs/kafka_architecture.md. PLAINTEXT (no auth/TLS) is consistent
+    # with this project's standing no-real-auth stance (docs/architecture.md,
+    # restated in docs/dashboard_security.md) -- not a new gap Phase 12
+    # introduces, the same one every other phase has disclosed.
+    KAFKA_BOOTSTRAP_SERVERS: str = Field(default="localhost:9092")
+
+    # FR-66: max attempts INCLUDING the first (i.e. up to 2 retries after
+    # the initial attempt is the PRD's literal "retry 3 times" only if read
+    # as 3 retries; this codebase reads it as "up to 3 total attempts" --
+    # see docs/retry_strategy.md "Interpreting 'retry 3 times'" for why).
+    AGENT_MAX_ATTEMPTS: int = Field(default=3)
+    # Exponential backoff base, seconds: attempt 1 fails -> wait
+    # AGENT_RETRY_BACKOFF_BASE_SECONDS ** 1, attempt 2 fails -> ** 2, etc.
+    AGENT_RETRY_BACKOFF_BASE_SECONDS: float = Field(default=2.0)
+
+    # Consumer group prefix -- each agent gets its own group
+    # (f"{prefix}-{agent_name}"), so agent replicas can scale independently
+    # later without a design change now. See docs/kafka_architecture.md.
+    KAFKA_CONSUMER_GROUP_PREFIX: str = Field(default="email-ai")
+
 
 @lru_cache
 def get_settings() -> Settings:
