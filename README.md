@@ -1,7 +1,9 @@
 # AI Email Intelligence System
 
-> **Status:** Phase 10 of 15 (PRD phase numbering). Modular monolith, no
+> **Status:** Phase 11 of 15 (PRD phase numbering). Modular monolith, no
 > Kafka/K8s/microservices yet — deliberately, see `docs/architecture.md`.
+> Phase 11 is also this project's first frontend (`frontend/`, React +
+> TypeScript) — every prior phase was backend-only.
 > Full PRD: [`project document/PRD_AI_Email_Intelligence_System.md`](project%20document/PRD_AI_Email_Intelligence_System.md).
 
 ## Progress
@@ -19,7 +21,8 @@
 | 8 | Email Routing Engine | 🟡 Deterministic rule engine composing Spam/Category/Intent/Sentiment/Priority, served and audit-logged. **Not PRD-compliant** — no routing-outcome ground truth exists, and **inherits every upstream module's data-quality caveat**. Also **discovered a new, higher-priority finding**: Spam's recall-tuned threshold over-fires on ordinary business email outside its evaluation domain, quarantining most of Phase 8's own qualitative test sample before department routing runs at all. See `docs/model_cards/routing.md` / `docs/error_analysis_routing.md`. |
 | 9 | Similar Email Retrieval / RAG Foundation | 🟡 Vector similarity search (ChromaDB, local) over PII-scrubbed embeddings, metadata-filterable by category/department/resolution-status, served and audit-logged. **New infrastructure**: this project's first canonical cross-module email entity, and its first wired-in PII anonymization. **Not PRD-compliant** — no retrieval-outcome ground truth exists. Two real bugs found and fixed during this phase's own testing: a TF-IDF vocabulary-pollution bug (all-zero similarity scores) and a Windows-specific import-order crash that segfaulted the *entire* test suite. **Default embedder changed to MiniLM in Phase 10** (see that row) — this row's TF-IDF-as-default framing is historical. See `docs/model_cards/embedding_retrieval.md` / `docs/error_analysis_retrieval.md`. |
 | 10 | Auto-Reply Generation | 🟡 RAG + LLM draft-reply generation (Groq/`llama-3.3-70b-versatile`, a project-owner decision — not the PRD's own OpenAI/Anthropic suggestion), draft-only, human approve/edit/reject required (FR-49/FR-51 enforced architecturally — no send capability exists anywhere in the pipeline). **Not PRD-compliant** — no Human Acceptance Rate data exists (requires real agents/real traffic). A real, disclosed hallucination example (fabricated support hours on an ungrounded query) and a real performance bug (embedder/vector-store reconstructed on every call, found and fixed via this phase's own real-Postgres-and-real-Groq end-to-end testing) were both found this phase. See `docs/model_cards/auto_reply.md` / `docs/error_analysis_auto_reply.md`. |
-| 11–15 | Dashboard, CI/CD, Cloud, MLOps | ⬜ Not started |
+| 11 | Manager Dashboard & Analytics | 🟡 React+TypeScript frontend (this project's first) over a new analytics query layer (`app/services/dashboard_service.py`) and a unified `feedback_events` table replacing write-only JSONL as the queryable home for corrections/confirmations across all 9 modules. Real-time updates (WebSocket + 30s polling fallback), SLA tracking, a ranked low-confidence Human Review Queue, CSV/PDF export, and honest evidence-status labeling on every model-derived number (never presents synthetic/off-domain metrics as production accuracy). **Not PRD-compliant** in several disclosed ways — email volume is a proxy (Phase 9's indexing still isn't auto-wired), WebSocket fan-out is single-process only, PDF/CSV export is on-demand not scheduled, and FR-61's retraining trigger is audit-only by explicit design (no retraining executes). Four real bugs (two timezone-handling bugs, a duplicate-feedback race, an unbounded query) were found and fixed during this phase's own adversarial review. See `docs/architecture_dashboard.md` / `docs/error_analysis_dashboard.md` / `PHASE_11_FINAL_REPORT.md`. |
+| 12–15 | CI/CD, Cloud, MLOps | ⬜ Not started |
 
 **Read this before trusting any priority-classification, categorization,
 summarization, sentiment, intent, or routing metric**: Phases 4, 5, and 7B's
@@ -60,7 +63,14 @@ Human Acceptance Rate data exists (requires real agents/real traffic),
 and one real, disclosed hallucination example (a confidently fabricated,
 ungrounded detail) was directly observed during this phase's own
 qualitative testing against the real Groq API — see
-`docs/error_analysis_auto_reply.md`.
+`docs/error_analysis_auto_reply.md`. The Manager Dashboard (Phase 11)
+does not train or classify anything itself — it composes and displays
+every module above, and its own evidentiary discipline is to never let
+that composition imply more certainty than the underlying module has:
+every dashboard number derived from a classifier carries the same
+evidence badge (REAL_VALIDATED/SYNTHETIC/OFF_DOMAIN/UNVALIDATED/
+PROVISIONAL) this table already establishes — see
+`docs/model_evidence_policy.md`.
 
 ## Architecture (Completed Work)
 
@@ -306,7 +316,21 @@ or reject (FR-49/FR-51 enforced architecturally — no send capability
 exists anywhere in this codebase). A real, disclosed hallucination example
 and a real, fixed performance bug (found via this phase's own testing
 against a real Postgres container and the real Groq API, not just mocks)
-are both documented in `docs/error_analysis_auto_reply.md`.
+are both documented in `docs/error_analysis_auto_reply.md`. **Manager
+Dashboard & Analytics** (Phase 11, `frontend/` + `GET/POST
+/api/v1/dashboard/*`) is this project's first frontend and the first
+module that composes every other module's outputs into one place rather
+than adding a new capability of its own — a new `feedback_events` table
+unifies what was previously nine write-only, unqueryable JSONL feedback
+logs, a ranked Human Review Queue surfaces low-confidence predictions
+(the "confirm correct" action it introduces is what makes FR-62's
+correction-rate formula computable at all, not just theoretically
+correct), and every model-derived number on every page carries the same
+evidence-status badge this README's own disclosures already establish
+per module. Four real bugs (two datetime timezone-handling bugs, a
+duplicate-feedback race condition, and an unbounded database query) were
+found and fixed during this phase's own adversarial review — see
+`docs/error_analysis_dashboard.md`.
 
 **Data pipeline**: DVC-versioned datasets, a dataset registry that records
 domain-match/trust-level per source (so a low-quality dataset can't
@@ -315,19 +339,26 @@ ingestion, task-aware preprocessing (`EmailPreprocessor` with per-task
 configs), reusable content/metadata feature extractors
 (`app/feature_engineering/`).
 
-**Testing**: 389 tests (+1 opt-in slow integration test, `RUN_SLOW_TESTS=1`)
-across data validation, model behavior, API contracts, security, and DB
-persistence — `pytest`, `pytest-asyncio`, `aiosqlite` for DB tests without
-a live Postgres. No paid API key is required for this suite — Auto-Reply's
-LLM calls are always faked (`FakeLLMProvider`) or exercised against a
-monkeypatched `groq.Groq` client using real exception types, never a real
-network call; the only real-Groq-API code path is the manual, opt-in
+**Testing**: 461 backend tests (+1 opt-in slow integration test,
+`RUN_SLOW_TESTS=1`) across data validation, model behavior, API
+contracts, security, and DB persistence — `pytest`, `pytest-asyncio`,
+`aiosqlite` for DB tests without a live Postgres. No paid API key is
+required for this suite — Auto-Reply's LLM calls are always faked
+(`FakeLLMProvider`) or exercised against a monkeypatched `groq.Groq`
+client using real exception types, never a real network call; the only
+real-Groq-API code path is the manual, opt-in
 `scripts/qualitative_eval_auto_reply.py`. Migrations are additionally
 verified against a real, disposable PostgreSQL 16 container (not just
 SQLite) whenever the schema changes — see
-`docs/phase10_requirements_traceability.md` for the most recent example
-(upgrade → downgrade → upgrade round-trip, plus a real end-to-end request
-through the actual FastAPI app against that same container).
+`docs/phase10_requirements_traceability.md` and
+`docs/analytics_data_model.md` for the two most recent examples
+(upgrade → downgrade → upgrade round-trips, plus real end-to-end
+requests through the actual FastAPI app against that same container).
+**Frontend has no automated test suite yet** (no Jest/Vitest/Testing
+Library) — Phase 11's frontend verification is limited to a clean
+`npm run build` (strict TypeScript, zero errors) and manual `curl`-based
+integration checks against a real running backend; disclosed as a real
+gap, not silently skipped — see `PHASE_11_FINAL_REPORT.md` §8.
 
 ## Quickstart
 
@@ -392,7 +423,7 @@ around it (map to a different host port, e.g. `5433:5432`, and set
 ```
 backend/
 ├── app/
-│   ├── api/v1/endpoints/       # spam.py, priority.py, category.py, summarization.py, sentiment.py, intent.py, routing.py, retrieval.py, reply.py, health.py
+│   ├── api/v1/endpoints/       # spam.py, priority.py, category.py, summarization.py, sentiment.py, intent.py, routing.py, retrieval.py, reply.py, dashboard.py (Module 11), health.py
 │   ├── core/                    # config, logging — cross-cutting
 │   ├── data_ingestion/          # corpus loaders + dataset_registry.py
 │   ├── database/                # async session, repositories/ (incl. reply_draft_repository.py)
@@ -400,7 +431,7 @@ backend/
 │   ├── feature_engineering/     # content/metadata feature extractors, keyword lexicons, feature_schema
 │   ├── inference/                # SpamPredictor/PriorityPredictor/CategoryPredictor/VaderSentimentPredictor/IntentPredictor/TfidfEmbedder/MiniLmEmbedder + Protocol backends; llm_provider.py (Protocol) + groq_provider.py + fake_llm_provider.py (Module 10)
 │   ├── middleware/               # request logging, global error handling
-│   ├── models/                   # SQLAlchemy ORM (*_prediction_log.py, summary_log.py, routing_decision_log.py, email_record.py, reply_draft.py)
+│   ├── models/                   # SQLAlchemy ORM (*_prediction_log.py, summary_log.py, routing_decision_log.py, email_record.py, reply_draft.py, feedback_event.py + retraining_trigger.py (Module 11))
 │   ├── nlp/                       # extractive/abstractive summarizers, grounding, thread, chunking, intent_entities, reply_prompt.py (Module 10) — generation/extraction, not classification
 │   ├── pipeline/                  # PipelineConfig/Factory, MLPipeline, PriorityMLPipeline, CategoryMLPipeline, IntentMLPipeline
 │   ├── preprocessing/             # EmailPreprocessor + task-specific configs
@@ -408,7 +439,7 @@ backend/
 │   ├── routing/                   # Module 8 pure logic: rules.py, keyword_matcher.py, department_taxonomy.py, sender_domain.py, signal_reliability.py — no service dependency, independently testable
 │   ├── schemas/                   # Pydantic request/response contracts (incl. auto_reply.py)
 │   ├── security/                  # pii_anonymizer.py (Presidio-backed, lazy-loaded — wired in by Module 9, dormant since early in this project before that; reused by Module 10 for a new obligation — see docs/architecture_auto_reply.md "PII")
-│   ├── services/                  # spam/priority/category/summarization/sentiment/intent/routing/retrieval_service, auto_reply_service.py (Module 10), feedback_service
+│   ├── services/                  # spam/priority/category/summarization/sentiment/intent/routing/retrieval_service, auto_reply_service.py (Module 10), feedback_service, dashboard_service.py + dashboard_broadcaster.py + dashboard_report_export.py + feedback_event_service.py (Module 11)
 │   ├── training/                  # Trainer, ArtifactManager
 │   └── main.py                    # app factory + startup warm-up (also: a documented sklearn/pandas import-order workaround — see docs/error_analysis_retrieval.md "Incident 2")
 ├── alembic/                        # DB migrations
@@ -420,6 +451,17 @@ artifacts/                          # trained model artifacts + versioned copies
 data/                                # DVC-tracked datasets (raw/processed)
 docker/Dockerfile
 docker-compose.yml
+frontend/                            # Module 11 — this project's first frontend (React + TypeScript + Vite)
+├── src/
+│   ├── api/                         # typed fetch wrappers per dashboard endpoint
+│   ├── charts/                      # recharts wrappers (SimpleBarChart, SimpleLineChart)
+│   ├── components/                  # EvidenceBadge, KpiCard, DateRangePicker, Layout, QueryState
+│   ├── hooks/                       # useDashboardData (React Query), useDashboardFilters, useDashboardWebSocket
+│   ├── pages/                       # Overview, EmailVolume, Categories, Sentiment, Priority, SLA, Agents, ModelQuality, ReviewQueue, Reports
+│   ├── types/                       # TS interfaces mirroring backend/app/schemas/dashboard.py
+│   └── websocket/                   # DashboardSocket (reconnect + 30s-poll-fallback client)
+├── package.json
+└── vite.config.ts
 docs/
 ├── architecture.md                     # Phase 1 decisions + module doc index
 ├── architecture_spam_detection.md
@@ -468,6 +510,15 @@ docs/
 ├── phase8_requirements_traceability.md
 ├── phase9_requirements_traceability.md
 ├── phase10_requirements_traceability.md
+├── requirements_traceability_phase11.md
+├── architecture_dashboard.md
+├── analytics_data_model.md
+├── feedback_loop.md
+├── active_learning.md
+├── dashboard_security.md
+├── dashboard_performance.md
+├── error_analysis_dashboard.md
+├── model_evidence_policy.md
 ├── technical_debt/
 │   └── database_write_hang.md          # investigated, mitigated, NOT root-caused — read before assuming DB writes can't hang
 ├── model_cards/
@@ -523,6 +574,17 @@ project document/
 - [`docs/error_analysis_auto_reply.md`](docs/error_analysis_auto_reply.md) — a real performance bug found and fixed via this phase's own real-Postgres-and-real-Groq end-to-end testing (the default embedder/vector store were being reconstructed on every call), plus a real, disclosed hallucination example from the qualitative script's real API output.
 - [`docs/phase10_requirements_traceability.md`](docs/phase10_requirements_traceability.md) — FR-48 to FR-52 extracted directly from the PRD, mapped to design/implementation/test/evidence, including real measured latency numbers.
 - [`docs/architecture_auto_reply.md`](docs/architecture_auto_reply.md) / [`docs/model_cards/auto_reply.md`](docs/model_cards/auto_reply.md)
+- [`PHASE_11_AUDIT_REPORT.md`](PHASE_11_AUDIT_REPORT.md) — the Stage 1 repository audit: what data actually exists, the JSONL-only-feedback gap (no user ID anywhere), and why `email_id` was deliberately NOT added to six prediction tables.
+- [`docs/requirements_traceability_phase11.md`](docs/requirements_traceability_phase11.md) — FR-53 to FR-62 mapped to design/implementation/test/evidence, verified post-implementation.
+- [`docs/architecture_dashboard.md`](docs/architecture_dashboard.md) — the full Stage 3–5 design: data model, review-queue ranking, correction-rate formula, WebSocket architecture, SLA definition.
+- [`docs/analytics_data_model.md`](docs/analytics_data_model.md) — the short reference version of the new/changed tables and why no `dashboard_metrics`-style duplicate tables were built.
+- [`docs/feedback_loop.md`](docs/feedback_loop.md) — the unified `feedback_events` mechanism, the new `CONFIRM` action, and why it's what makes FR-62's correction-rate formula computable at all.
+- [`docs/active_learning.md`](docs/active_learning.md) — the Review Queue's ranking heuristic, and what this phase explicitly is NOT (no automated retraining, no feedback-to-training-data pipeline).
+- [`docs/dashboard_security.md`](docs/dashboard_security.md) — current (unauthenticated) vs. future identity model, CORS, and the deliberate subject-only (never body) PII exposure in the Review Queue.
+- [`docs/dashboard_performance.md`](docs/dashboard_performance.md) — real measured latency plus every disclosed scaling limit (Python-side aggregation, single-process WebSocket, no scheduled reports).
+- [`docs/error_analysis_dashboard.md`](docs/error_analysis_dashboard.md) — four real bugs found and fixed during this phase's own adversarial review: two datetime timezone bugs, a duplicate-feedback race condition, and an unbounded database query.
+- [`docs/model_evidence_policy.md`](docs/model_evidence_policy.md) — the five evidence badges, where they're enforced, and why correction rate is never presented as an accuracy proxy on its own.
+- [`PHASE_11_FINAL_REPORT.md`](PHASE_11_FINAL_REPORT.md) — the Stage 19 phase-gate report: what's FULL/PARTIAL, test counts, and honestly-stated production-readiness level.
 - [`docs/technical_debt/database_write_hang.md`](docs/technical_debt/database_write_hang.md) — a real, reproduced DB-write hang under the live Windows request path; seven isolation experiments ruled out asyncpg, bare asyncio, SQLAlchemy alone, and `BaseHTTPMiddleware` as the sole cause; root cause still not found. Mitigated (bounded, not eliminated), not solved — read before assuming a DB timeout in this codebase can't still hang.
 - [`docs/git_workflow.md`](docs/git_workflow.md) — branching, commit conventions.
 
@@ -562,31 +624,35 @@ project document/
 - **Update**: Ollama's local-fallback (named in the PRD's own ADR-002) is now implemented — `OllamaProvider` + `FallbackLLMProvider`, triggered specifically on a Groq 429/503. Verified against a real, locally-running Ollama server; one disclosed finding from that verification: a cold Ollama model load took ~11s, which by itself can exceed FR-50's 10s budget if the fallback fires against an unloaded model — no Ollama pre-warming was built. See `docs/architecture_auto_reply.md` "Ollama Fallback."
 - **Update**: a hallucination-mitigation confidence gate, Human Acceptance Rate tracking (`edit_distance` column + structured review-action logs), and an auto-mark-resolved-on-approve mechanism (closing Phase 9's resolution-status gap gradually) were all added after the initial Phase 10 report — see `docs/architecture_auto_reply.md` for all three.
 - No real tenant authentication exists for Auto-Reply either (same standing gap since Phase 1) — `reviewer_id`/`organization_id` on approve/edit/reject are caller-supplied, not verified.
+- **Feedback was JSONL-only, write-only, and had no user-ID field anywhere before Phase 11** — every `*/feedback` endpoint recorded original/corrected values and a timestamp but never who submitted it. See `PHASE_11_AUDIT_REPORT.md` finding F2. **Update (Phase 11)**: a new `feedback_events` Postgres table now dual-writes alongside every existing JSONL write, adding `reviewer_id` (still caller-supplied and unauthenticated) and making aggregate correction-rate queries possible for the first time — see `docs/feedback_loop.md`.
+- **Six of eight prediction/log tables had no `organization_id` before Phase 11**, unlike `emails`/`reply_drafts` — inconsistent tenant scoping across the codebase. **Update (Phase 11)**: backfilled via migration on all 7 tables that lacked it (model-level default, zero changes to existing `*/predict` endpoints) — see `docs/analytics_data_model.md`.
+- **Phase 11's Manager Dashboard inherits every evidentiary caveat above by composition, same as Routing did in Phase 8** — it trains and validates nothing itself; its own discipline is never presenting a synthetic/off-domain/unvalidated number as if it were validated accuracy. See `docs/model_evidence_policy.md`.
+- **Email volume on the dashboard is a proxy** (sourced from `spam_prediction_logs`, not `emails`) precisely because Phase 9's indexing still isn't auto-wired to the six prediction endpoints — the same gap flagged above, now also limiting Phase 11's own "total email volume" KPI. See `docs/architecture_dashboard.md` §"Email volume."
+- **No Human Acceptance Rate or correction-rate data exists for real usage yet** — Phase 11's Model Quality page and Overview KPIs correctly display "No real observations yet" rather than fabricating a 0% rate, but the underlying gap (no real agents, no real traffic) is unchanged from Phase 10. See `docs/feedback_loop.md`.
+- **Phase 11's frontend has no automated test coverage** (no Jest/Vitest/Testing Library) and was never visually verified in an actual browser this phase (no browser tooling was available in the environment it was built in) — disclosed explicitly, not silently claimed as done. See `PHASE_11_FINAL_REPORT.md` §7–8.
+- **Four real bugs were found and fixed during Phase 11's own adversarial review**: two datetime timezone-handling bugs (SLA calculation crashing on SQLite's naive-datetime round-trip; custom date-range filters silently depending on the Postgres server's session timezone rather than being explicitly normalized), a duplicate-feedback race condition (double-clicking "Confirm" on the Review Queue could insert two rows for one review), and an unbounded database query (the Review Queue scanned entire tables with no row cap). All four fixed and verified with dedicated tests. See `docs/error_analysis_dashboard.md`.
 
-## Next (Phase 11)
+## Next (Phase 12)
 
-Dashboard & Analytics (Module 11): the PRD's own real-time triage UI —
-a queue view surfacing Priority/Category/Sentiment/Intent/Routing's
-existing outputs, SLA-compliance tracking against Priority's levels, and
-the human feedback/correction UI every module's `*/feedback` endpoint has
-been quietly waiting for since Phase 3. The first phase in this project
-that is primarily frontend work rather than a new ML/backend module —
-worth an explicit scoping conversation before starting (React per the
-PRD's own stack, or a lighter admin-panel approach given no real users
-exist yet) the same way Phase 9/10 both flagged their own open questions
-before implementation began.
-
-Also worth deciding explicitly before starting, the same way Phase 8/9/10
-did for their own open questions: whether to close Phase 9's "not
-auto-wired" gap first (so Auto-Reply's RAG context and the dashboard's
-queue both reflect real, automatically-indexed data rather than only
-manually-indexed test cases), and whether any real usage (even informal,
-by the project owner) should happen before Phase 11 so Auto-Reply's
-Human Acceptance Rate has its first real data point.
+CI/CD (Module 12, per the PRD's own phase numbering): this project has
+had no automated pipeline at all through 11 phases — every test run,
+every migration verification against a real disposable Postgres
+container, and every build check in this project's history has been run
+manually, by hand, per phase. Worth an explicit scoping conversation
+before starting, the same way Phase 9/10/11 each flagged their own open
+questions first: what CI actually needs to run (461 backend tests +
+`npm run build` for the frontend, at minimum), whether migration
+verification against a real Postgres container belongs in CI or stays a
+manual pre-merge step, and whether Phase 11's own disclosed gaps
+(frontend test coverage, in particular) should be closed before or
+alongside CI/CD setup rather than after.
 
 Still blocked, same as every phase since 4, on the annotation effort
 tracked in `docs/ml_data_maturity_roadmap.md` before more ML modules
 compound the same data problem; Routing's Spam domain-transfer gap
 (`docs/error_analysis_routing.md`) remains the smaller, more tractable,
-still-unfixed near-term item. See each module's architecture doc for its
-own "Known Gaps" section for smaller, unblocked follow-ups.
+still-unfixed near-term item. Phase 11's own remaining work (manual
+browser verification of the dashboard, frontend test coverage, real
+authentication) is tracked in `PHASE_11_FINAL_REPORT.md` §15, not
+repeated here. See each module's architecture doc for its own "Known
+Gaps" section for smaller, unblocked follow-ups.
