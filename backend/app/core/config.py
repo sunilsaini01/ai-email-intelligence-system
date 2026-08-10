@@ -60,6 +60,36 @@ class Settings(BaseSettings):
     # --- Security (placeholders — wired up properly in a later phase) ---
     SECRET_KEY: str = Field(default="CHANGE_ME_IN_PRODUCTION")
 
+    # --- Phase 10 (Auto-Reply Generation) — Groq ---
+    # GROQ_API_KEY_2..5 are optional extra credentials GroqProvider rotates
+    # to on a 429 (RateLimitError) — see app/inference/groq_provider.py.
+    # Groq's rate limits are per-organization, not per-key (verified against
+    # Groq's own docs before this was built), so keys from the SAME account
+    # do not multiply throughput; they're only useful as genuinely separate
+    # accounts/credentials, or as a resilience measure if one key is revoked.
+    GROQ_API_KEY: str = Field(default="")
+    GROQ_API_KEY_2: str = Field(default="")
+    GROQ_API_KEY_3: str = Field(default="")
+    GROQ_API_KEY_4: str = Field(default="")
+    GROQ_API_KEY_5: str = Field(default="")
+    GROQ_MODEL: str = Field(default="llama-3.3-70b-versatile")
+
+    @property
+    def GROQ_API_KEYS(self) -> list[str]:
+        """Non-empty keys only, in rotation order."""
+        return [
+            k
+            for k in (self.GROQ_API_KEY, self.GROQ_API_KEY_2, self.GROQ_API_KEY_3, self.GROQ_API_KEY_4, self.GROQ_API_KEY_5)
+            if k
+        ]
+
+    # --- Post-Phase-10 fix #5 — Ollama fallback ---
+    # No API key needed (local server). Only used when Groq raises
+    # LLMRateLimitedError/LLMServiceUnavailableError (429/503) -- see
+    # app/inference/fallback_llm_provider.py.
+    OLLAMA_MODEL: str = Field(default="mistral:7b")
+    OLLAMA_BASE_URL: str = Field(default="http://localhost:11434")
+
 
 @lru_cache
 def get_settings() -> Settings:
