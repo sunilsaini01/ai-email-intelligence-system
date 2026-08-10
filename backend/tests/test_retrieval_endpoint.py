@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.database.session import Base, get_db
-from app.inference.tfidf_embedder import _DEFAULT_ARTIFACT_DIR
+from app.inference.tfidf_embedder import TfidfEmbedder, _DEFAULT_ARTIFACT_DIR
 from app.main import create_app
 from app.retrieval.chroma_vector_store import ChromaVectorStore
 from app.services.retrieval_service import RetrievalService, get_retrieval_service
@@ -41,7 +41,16 @@ async def sqlite_session_factory():
 @pytest.fixture
 def retrieval_client(sqlite_session_factory, tmp_path):
     get_retrieval_service.cache_clear()
-    fake_service = RetrievalService(vector_store=ChromaVectorStore(persist_dir=str(tmp_path / "chroma")))
+    # Explicit TfidfEmbedder injection -- this file's skip-gate (above) checks
+    # for the TF-IDF artifact specifically; RetrievalService's own DEFAULT
+    # embedder changed to MiniLM in Phase 10 (docs/architecture_auto_reply.md
+    # "Embedder Decision"), so relying on the default here would silently
+    # start requiring network access to download MiniLM's weights instead of
+    # testing the real, local, artifact-gated TF-IDF path this file documents.
+    fake_service = RetrievalService(
+        embedder=TfidfEmbedder(),
+        vector_store=ChromaVectorStore(persist_dir=str(tmp_path / "chroma")),
+    )
 
     async def override_get_db():
         async with sqlite_session_factory() as session:
