@@ -15,6 +15,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
+# app/preprocessing/text_helpers.py and email_preprocessor.py import
+# nltk.corpus.stopwords at module load time -- the corpus is data, not
+# part of the nltk package, and must be fetched separately or the app
+# crashes on startup with a LookupError. Downloaded to a fixed path here
+# (not $HOME, which differs between the builder's root user and the
+# runtime image's appuser) and copied into one of NLTK's default search
+# paths in the runtime stage below.
+RUN python -m nltk.downloader -d /build/nltk_data stopwords
+
 
 FROM python:3.11-slim AS runtime
 
@@ -27,6 +36,7 @@ RUN useradd --create-home --shell /bin/bash appuser
 WORKDIR /app
 
 COPY --from=builder /root/.local /home/appuser/.local
+COPY --from=builder /build/nltk_data /usr/local/share/nltk_data
 COPY ./app ./app
 
 ENV PATH=/home/appuser/.local/bin:$PATH \
