@@ -101,6 +101,13 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/app:/app/app   # live-reload mount for local dev only
+      # Spam/Priority/Category/Intent load their trained artifacts from
+      # <repo_root>/artifacts (see e.g. app/services/spam_service.py's
+      # _DEFAULT_ARTIFACT_DIR). Without this mount the container has no
+      # access to artifacts/ at all -- those 4 services fail to warm up
+      # on startup (only Sentiment/VADER and Summarization, which don't
+      # load a local joblib file, would appear to work).
+      - ./artifacts:/artifacts
 
   # Phase 12 -- runs the Orchestrator + all 6 specialist agent consumers
   # in one process (see backend/app/agents/runner.py's module docstring
@@ -127,6 +134,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/app:/app/app
+      - ./artifacts:/artifacts   # same reason as the api service above
 
 volumes:
   postgres_data:
