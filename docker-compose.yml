@@ -122,6 +122,13 @@ services:
     container_name: email_ai_agents
     restart: unless-stopped
     command: ["python", "-m", "app.agents.runner"]
+    # The image's HEALTHCHECK (docker/Dockerfile) curls localhost:8000/api/v1/health,
+    # which only the `api` service's uvicorn process listens on. This
+    # service runs a pure Kafka consumer loop with no HTTP server, so
+    # that check always fails here -- not a real problem, just the wrong
+    # check for this command. Disabled rather than left permanently red.
+    healthcheck:
+      disable: true
     env_file:
       - ./backend/.env
     environment:
