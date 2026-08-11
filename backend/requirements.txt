@@ -1,18 +1,60 @@
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
-pydantic==2.7.4
+# pydantic was pinned to 2.7.4, which is mathematically impossible to
+# install alongside presidio-analyzer (added in Phase 9, requires
+# pydantic>=2.12.5) -- a real `pip install` ResolutionImpossible error
+# reproduced in a clean venv during the Phase 13 CI audit, not just a
+# symptom of this dev machine's own (separately drifted) global env.
+# 2.13.4 is the lowest version verified to satisfy every direct
+# dependency's constraint (fastapi<3.0, pydantic-settings>=2.7,
+# spacy<3.0/>=2.0, chromadb>=2.0, presidio-analyzer>=2.12.5,<3.0).
+pydantic==2.13.4
 pydantic-settings==2.3.4
 sqlalchemy==2.0.31
-asyncpg==0.29.0
+# greenlet -- SQLAlchemy's async engine (sqlalchemy.ext.asyncio, used by
+# every DB-backed request path and test in this app) requires it at
+# runtime to bridge sync/async execution; it is not auto-installed by a
+# plain `sqlalchemy==2.0.31` pin. Missing entirely from this file before
+# a genuinely clean-venv test run surfaced it as 143 real test errors
+# ("the greenlet library is required to use this function") -- masked
+# locally because it was already present from unrelated prior work on
+# this dev machine's global environment.
+greenlet==3.5.1
+# asyncpg 0.29.0 has no prebuilt wheel for newer CPython (no source-build
+# toolchain in CI/most dev machines by default) -- 0.31.0 does, and is the
+# version verified against the current 487-test suite.
+asyncpg==0.31.0
 alembic==1.18.4
 python-json-logger==2.0.7
 python-dotenv==1.0.1
 
-# NOTE: this file was, and remains, incomplete relative to Phases 1-5's
-# actual runtime dependencies (scikit-learn, pandas, numpy, joblib, spacy,
-# beautifulsoup4, nltk, presidio-analyzer/anonymizer are all imported by
-# existing modules but were never added here — a pre-existing gap, not
-# introduced by Phase 6, and out of this phase's scope to reconcile).
+# Phases 1-5 (ML foundations) -- closed a Phase 13 CI-audit finding: these
+# were imported by real service code (app/services/*, app/pipeline/*,
+# app/preprocessing/*) but never pinned here, so a clean `pip install` on a
+# fresh CI runner could not actually run this app. Versions below are the
+# exact ones verified working against the current test suite (487 passed).
+scikit-learn==1.9.0
+pandas==2.3.2
+numpy==2.3.2
+joblib==1.5.2
+# pandas needs an engine to read/write parquet -- app/security/pii_anonymizer.py
+# calls pd.read_parquet/to_parquet directly (also used by the dataset-loading
+# test suite and offline training scripts). Also only surfaced by a genuinely
+# clean-venv test run (28 test errors: "Missing optional dependency 'pyarrow'").
+pyarrow==24.0.0
+spacy==3.8.13
+# spaCy ships pipeline weights as a separate package, not a normal PyPI
+# release -- pinned as a direct wheel URL so `pip install -r requirements.txt`
+# alone is sufficient (no extra `spacy download` step needed in CI).
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+beautifulsoup4==4.14.2
+# app/preprocessing/text_helpers.py and email_preprocessor.py import
+# nltk.corpus.stopwords at module load time -- the `stopwords` corpus itself
+# is DATA, not part of the nltk package, and must be fetched separately
+# (`python -m nltk.downloader stopwords`) before these modules can even be
+# imported. Documented in docs/architecture_ci_cd.md's environment-setup step.
+nltk==3.9.4
+
 # Phase 6 (email summarization) additions only:
 torch==2.12.1
 transformers==5.13.0

@@ -4,10 +4,15 @@
 pytest==8.2.2
 pytest-asyncio==0.23.7
 aiosqlite==0.22.1  # async SQLite driver — used only to test the async DB layer without Postgres
-httpx==0.27.0
 ruff==0.5.0
 mypy==1.10.1
 black==24.4.2
+# pytest-cov -- Phase 13 (CI/CD) coverage measurement (FR-70 / PRD NFR
+# §6.5 targets). httpx is NOT re-pinned here (it was 0.27.0, conflicting
+# with requirements.txt's 0.28.1 pin -- a real `pip install` failure found
+# during the Phase 13 audit: `ResolutionImpossible` installing both files
+# together). httpx is already pinned once, correctly, in requirements.txt.
+pytest-cov==5.0.0
 
 # Phase 6 (email summarization) — evaluation only, never imported by
 # production inference code, so it stays dev-only (same reasoning as the
