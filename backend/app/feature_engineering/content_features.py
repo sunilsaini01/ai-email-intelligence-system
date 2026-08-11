@@ -1,15 +1,16 @@
 import string
+
 import numpy as np
 
+from app.feature_engineering.category_keywords import CATEGORY_KEYWORDS
 from app.feature_engineering.feature_models import ContentFeatures
 from app.feature_engineering.patterns import (
-    URL_PATTERN,
+    CURRENCY_PATTERN,
     EMAIL_PATTERN,
     PHONE_PATTERN,
-    CURRENCY_PATTERN,
     SENTENCE_PATTERN,
+    URL_PATTERN,
 )
-from app.feature_engineering.category_keywords import CATEGORY_KEYWORDS
 from app.feature_engineering.priority_keywords import (
     ESCALATION_KEYWORDS,
     SLA_KEYWORDS,

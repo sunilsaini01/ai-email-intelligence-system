@@ -1,9 +1,10 @@
 # data/pipeline_metadata.py
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
 
 class PipelineRun:
     """
@@ -13,7 +14,7 @@ class PipelineRun:
     def __init__(self, version: str, script_name: str):
         self.version = version
         self.script_name = script_name
-        self.started_at = datetime.now(timezone.utc).isoformat()
+        self.started_at = datetime.now(UTC).isoformat()
         self.steps: list[dict] = []
         self.inputs: list[str] = []
         self.outputs: list[str] = []
@@ -21,7 +22,7 @@ class PipelineRun:
     def log_step(self, step_name: str, details: dict[str, Any]) -> None:
         self.steps.append({
             "step": step_name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             **details
         })
 
@@ -36,7 +37,7 @@ class PipelineRun:
             "corpus_version": self.version,
             "pipeline_script": self.script_name,
             "started_at": self.started_at,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
             "inputs": self.inputs,
             "outputs": self.outputs,
             "steps": self.steps,

@@ -1,8 +1,8 @@
-import os
 import email
+from collections.abc import Generator
 from email.message import Message
 from pathlib import Path
-from typing import Generator
+
 
 def load_spamassassin(
     data_dir: str,

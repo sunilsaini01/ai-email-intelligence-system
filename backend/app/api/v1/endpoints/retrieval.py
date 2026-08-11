@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.repositories.email_repository import EmailRepository
 from app.database.session import DB_WRITE_TIMEOUT_SECONDS, get_db
+from app.models.feedback_event import ACTION_RELEVANCE
 from app.retrieval.identity import compute_content_hash
 from app.retrieval.resolution_status import RESOLUTION_STATUSES
 from app.schemas.retrieval import (
@@ -44,7 +45,6 @@ from app.schemas.retrieval import (
     RetrievalSearchResponse,
     SimilarEmailMatch,
 )
-from app.models.feedback_event import ACTION_RELEVANCE
 from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_retrieval_feedback_logger
 from app.services.retrieval_service import RetrievalService, get_retrieval_service

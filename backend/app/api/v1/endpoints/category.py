@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.repositories.category_prediction_repository import CategoryPredictionRepository
 from app.database.session import DB_WRITE_TIMEOUT_SECONDS, get_db
+from app.models.feedback_event import ACTION_CORRECTION
 from app.schemas.category import (
     CategoryFeedbackRequest,
     CategoryFeedbackResponse,
@@ -33,7 +34,6 @@ from app.services.category_service import (
     CategoryServiceUnavailable,
     get_category_service,
 )
-from app.models.feedback_event import ACTION_CORRECTION
 from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_category_feedback_logger
 

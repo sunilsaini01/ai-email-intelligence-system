@@ -1,4 +1,5 @@
 import random
+
 import numpy as np
 
 SEED = 42

@@ -66,7 +66,13 @@ class GroqProvider(LLMProvider):
         self._clients = [Groq(api_key=key) for key in api_keys]
 
     def generate(self, system_prompt: str, user_prompt: str, timeout_seconds: float) -> LLMResult:
-        from groq import APIConnectionError, APITimeoutError, AuthenticationError, InternalServerError, RateLimitError
+        from groq import (
+            APIConnectionError,
+            APITimeoutError,
+            AuthenticationError,
+            InternalServerError,
+            RateLimitError,
+        )
 
         start = time.perf_counter()
         last_error: Exception | None = None

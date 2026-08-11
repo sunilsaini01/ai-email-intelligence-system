@@ -37,6 +37,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.repositories.email_repository import EmailRepository
 from app.database.repositories.reply_draft_repository import ReplyDraftRepository
 from app.database.session import DB_WRITE_TIMEOUT_SECONDS, get_db
+from app.models.feedback_event import (
+    ACTION_ACCEPT,
+    ACTION_CORRECTION,
+    ACTION_REJECT,
+    ACTION_RELEVANCE,
+)
 from app.models.reply_draft import (
     POLICY_INSUFFICIENT_CONTEXT,
     POLICY_NO_SIMILAR_EMAILS,
@@ -62,7 +68,6 @@ from app.services.auto_reply_service import (
     get_auto_reply_service,
     select_context,
 )
-from app.models.feedback_event import ACTION_ACCEPT, ACTION_CORRECTION, ACTION_REJECT, ACTION_RELEVANCE
 from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_auto_reply_feedback_logger
 from app.services.retrieval_service import RetrievalService, get_retrieval_service

@@ -1,7 +1,6 @@
 import joblib
-
-from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.pipeline import Pipeline
 
 from app.pipeline.pipeline_config import PipelineConfig
 from app.pipeline.pipeline_factory import PipelineFactory

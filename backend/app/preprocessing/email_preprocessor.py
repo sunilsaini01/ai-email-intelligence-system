@@ -1,11 +1,10 @@
-from dataclasses import dataclass, field
-from typing import Optional
-import re
 import html
 import logging
+import re
+from dataclasses import dataclass
 
-from bs4 import BeautifulSoup
 import spacy
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +37,7 @@ class EmailPreprocessor:
 
     def __init__(self, config: PreprocessingConfig):
         self.config = config
-        self._nlp: Optional[object] = None  # Lazy load
+        self._nlp: object | None = None  # Lazy load
 
         if config.keep_negations:
             from nltk.corpus import stopwords

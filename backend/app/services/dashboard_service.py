@@ -33,16 +33,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.database.repositories.feedback_event_repository import FeedbackEventRepository
 from app.database.repositories.retraining_trigger_repository import RetrainingTriggerRepository
-from app.models.email_record import EmailRecord
-from app.models.feedback_event import ACTION_ACCEPT, ACTION_CONFIRM, ACTION_CORRECTION, ACTION_REJECT, FeedbackEvent
-from app.models.intent_prediction_log import IntentPredictionLog
 from app.models.category_prediction_log import CategoryPredictionLog
+from app.models.email_record import EmailRecord
+from app.models.feedback_event import (
+    ACTION_ACCEPT,
+    ACTION_CONFIRM,
+    ACTION_CORRECTION,
+    ACTION_REJECT,
+    FeedbackEvent,
+)
+from app.models.intent_prediction_log import IntentPredictionLog
 from app.models.priority_prediction_log import PriorityPredictionLog
 from app.models.reply_draft import STATUS_APPROVED, STATUS_EDITED, STATUS_REJECTED, ReplyDraft
 from app.models.routing_decision_log import RoutingDecisionLog
 from app.models.sentiment_prediction_log import SentimentPredictionLog
 from app.models.spam_prediction_log import SpamPredictionLog
-from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
 
 # Correction-rate generalization (docs/architecture_dashboard.md "Correction
 # rate"): a "correction-like" action means the reviewer changed something;

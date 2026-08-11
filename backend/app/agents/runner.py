@@ -31,12 +31,12 @@ docs/architecture.md already established for the services/ layer.
 # category_agent/priority_agent/etc. (pull in sklearn) and, via the
 # Orchestrator, retrieval_service. Reproduced directly: omitting this
 # caused a real segfault (exit 139) running this exact module standalone.
-import pandas  # noqa: F401,E402
-import sklearn  # noqa: F401,E402
-
 import asyncio
 import logging
 import signal
+
+import pandas  # noqa: F401,E402
+import sklearn  # noqa: F401,E402
 
 from app.agents.category_agent import CategoryAgent
 from app.agents.intent_agent import IntentAgent

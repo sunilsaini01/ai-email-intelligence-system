@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-import joblib
 from pathlib import Path
 
+import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
+
 
 @dataclass
 class TFIDFConfig:

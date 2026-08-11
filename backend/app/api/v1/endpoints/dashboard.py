@@ -15,11 +15,21 @@ import logging
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_db
-from app.models.feedback_event import FEEDBACK_ACTIONS  # noqa: F401 -- re-exported for API consumers/tests
+from app.models.feedback_event import (
+    FEEDBACK_ACTIONS,  # noqa: F401 -- re-exported for API consumers/tests
+)
 from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
 from app.schemas.dashboard import (
     AgentWorkloadResponse,

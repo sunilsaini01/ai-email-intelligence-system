@@ -1,7 +1,6 @@
 import numpy as np
-
-from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.svm import LinearSVC
 
 
 def train_svm(

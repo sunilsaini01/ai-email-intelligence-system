@@ -25,7 +25,6 @@ from functools import lru_cache
 
 from app.inference.llm_provider import LLMProvider, LLMProviderError, LLMTimeoutError
 from app.models.reply_draft import (
-    POLICY_INSUFFICIENT_CONTEXT,
     POLICY_LLM_FAILURE,
     POLICY_NEEDS_HUMAN_REVIEW,
     POLICY_NO_SIMILAR_EMAILS,

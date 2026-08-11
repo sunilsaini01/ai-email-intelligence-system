@@ -1,5 +1,5 @@
-import re
 import html
+import re
 
 
 def anonymize_pii(text: str) -> str:

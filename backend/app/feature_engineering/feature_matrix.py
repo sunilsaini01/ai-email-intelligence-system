@@ -1,7 +1,6 @@
-import numpy as np
-
 from dataclasses import asdict
 
+import numpy as np
 from scipy.sparse import (
     csr_matrix,
     hstack,
@@ -9,6 +8,7 @@ from scipy.sparse import (
 
 from app.feature_engineering.feature_models import ContentFeatures
 from app.feature_engineering.metadata_models import MetadataFeatures
+
 
 def build_feature_matrix(
     tfidf_matrix,

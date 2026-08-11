@@ -1,10 +1,10 @@
 from datetime import datetime
 
-from app.feature_engineering.metadata_models import MetadataFeatures
 from app.feature_engineering.domains import (
     FREEMAIL_DOMAINS,
     INTERNAL_DOMAINS,
 )
+from app.feature_engineering.metadata_models import MetadataFeatures
 
 
 class MetadataFeatureExtractor:

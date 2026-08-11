@@ -1,5 +1,6 @@
-import pandas as pd
 import email as email_lib
+
+import pandas as pd
 
 
 def _extract_body_text(msg):

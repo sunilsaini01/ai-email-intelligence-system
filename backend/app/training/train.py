@@ -1,8 +1,7 @@
 from app.pipeline.pipeline_config import PipelineConfig
-from app.training.trainer import Trainer
 from app.training.artifact_manager import ArtifactManager
 from app.training.logger import get_logger
-
+from app.training.trainer import Trainer
 
 logger = get_logger()
 

@@ -1,7 +1,7 @@
-from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import MultinomialNB, ComplementNB
-from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import ComplementNB, MultinomialNB
+from sklearn.svm import LinearSVC
 
 from app.pipeline.pipeline_config import PipelineConfig
 

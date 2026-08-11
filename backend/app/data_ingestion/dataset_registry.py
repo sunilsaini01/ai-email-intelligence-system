@@ -1,7 +1,7 @@
 # data/dataset_registry.py
 
 from dataclasses import dataclass
-from typing import Optional
+
 
 @dataclass
 class DatasetEntry:
@@ -16,7 +16,7 @@ class DatasetEntry:
     trust_level: str              # 'primary' | 'supplementary' | 'baseline_only' | 'synthetic_bootstrap'
     known_issues: list[str]
     preprocessing_script: str     # Path to the loading/cleaning script
-    checksum_sha256: Optional[str] = None  # For reproducibility verification
+    checksum_sha256: str | None = None  # For reproducibility verification
 
 REGISTRY: dict[str, DatasetEntry] = {
     "spamassassin": DatasetEntry(

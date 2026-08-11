@@ -33,7 +33,6 @@ from contextlib import asynccontextmanager
 # together and this comment's reproduction no longer applies.
 import pandas  # noqa: F401,E402
 import sklearn  # noqa: F401,E402
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

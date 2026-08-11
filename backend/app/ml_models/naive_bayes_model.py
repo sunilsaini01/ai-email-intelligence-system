@@ -1,9 +1,10 @@
 import numpy as np
-
 from sklearn.naive_bayes import (
-    MultinomialNB,
     ComplementNB,
+    MultinomialNB,
 )
+
+
 def train_naive_bayes(
     X_train,
     y_train,

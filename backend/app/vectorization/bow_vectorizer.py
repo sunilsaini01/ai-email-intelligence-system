@@ -1,7 +1,6 @@
 from dataclasses import dataclass
-from typing import Optional
-import joblib
 
+import joblib
 from sklearn.feature_extraction.text import CountVectorizer
 
 
@@ -22,7 +21,7 @@ class BoWVectorizer:
     Production-ready Bag of Words Vectorizer.
     """
 
-    def __init__(self, config: Optional[BoWConfig] = None):
+    def __init__(self, config: BoWConfig | None = None):
 
         if config is None:
             config = BoWConfig()

@@ -1,5 +1,5 @@
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
 def plot_class_distribution(
@@ -122,9 +122,9 @@ def analyze_source_distribution(
     print("\nSOURCE DISTRIBUTION:\n")
 
     print(
-        (
+        
             df["data_source"]
             .value_counts(normalize=True)
             .round(3) * 100
-        )
+        
     )

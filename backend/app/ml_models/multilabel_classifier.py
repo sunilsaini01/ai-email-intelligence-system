@@ -1,7 +1,6 @@
-import joblib
-
 from pathlib import Path
 
+import joblib
 from sklearn.linear_model import LogisticRegression
 from sklearn.multiclass import OneVsRestClassifier
 

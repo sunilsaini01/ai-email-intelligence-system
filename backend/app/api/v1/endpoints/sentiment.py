@@ -22,13 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.repositories.sentiment_repository import SentimentPredictionRepository
 from app.database.session import DB_WRITE_TIMEOUT_SECONDS, get_db
+from app.models.feedback_event import ACTION_CORRECTION
 from app.schemas.sentiment import (
     SentimentFeedbackRequest,
     SentimentFeedbackResponse,
     SentimentPredictionRequest,
     SentimentPredictionResponse,
 )
-from app.models.feedback_event import ACTION_CORRECTION
 from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_sentiment_feedback_logger
 from app.services.sentiment_service import SentimentService, get_sentiment_service

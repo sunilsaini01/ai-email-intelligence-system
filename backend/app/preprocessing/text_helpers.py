@@ -3,10 +3,10 @@ Utility helper functions for email text preprocessing.
 These functions are reused by the main preprocessing pipeline.
 """
 
-import re
 import html
-import spacy
+import re
 
+import spacy
 from bs4 import BeautifulSoup
 from nltk.corpus import stopwords
 

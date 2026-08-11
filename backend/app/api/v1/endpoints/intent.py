@@ -19,13 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.repositories.intent_prediction_repository import IntentPredictionRepository
 from app.database.session import DB_WRITE_TIMEOUT_SECONDS, get_db
+from app.models.feedback_event import ACTION_CORRECTION
 from app.schemas.intent import (
     IntentFeedbackRequest,
     IntentFeedbackResponse,
     IntentPredictionRequest,
     IntentPredictionResponse,
 )
-from app.models.feedback_event import ACTION_CORRECTION
 from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_intent_feedback_logger
 from app.services.intent_service import (
