@@ -39,6 +39,14 @@ COPY --from=builder /root/.local /home/appuser/.local
 COPY --from=builder /build/nltk_data /usr/local/share/nltk_data
 COPY ./app ./app
 
+# alembic.ini and alembic/ are needed to run migrations from inside the
+# container (`alembic upgrade head`). The image previously shipped the
+# alembic package itself but never these two -- `docker compose exec api
+# alembic upgrade head` (see README) and any Kubernetes migration Job would
+# fail with "FileNotFoundError: alembic.ini" despite the binary being present.
+COPY ./alembic.ini ./alembic.ini
+COPY ./alembic ./alembic
+
 ENV PATH=/home/appuser/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
