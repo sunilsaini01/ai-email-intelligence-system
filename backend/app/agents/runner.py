@@ -50,6 +50,7 @@ from app.core.logging import setup_logging
 from app.messaging import topics
 from app.messaging.consumer import build_consumer, consume_forever
 from app.messaging.producer import start_producer, stop_producer
+from app.messaging.topic_admin import ensure_topics_exist
 
 logger = logging.getLogger("app.agents.runner")
 
@@ -87,6 +88,7 @@ async def _run_orchestrator() -> None:
 
 async def main() -> None:
     setup_logging()
+    await ensure_topics_exist()
     await start_producer()
 
     tasks = [asyncio.create_task(_run_specialist(cls)) for cls in SPECIALIST_AGENTS]

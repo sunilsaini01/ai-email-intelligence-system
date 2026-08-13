@@ -40,6 +40,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.messaging.producer import start_producer, stop_producer
+from app.messaging.topic_admin import ensure_topics_exist
 from app.middleware.exception_handlers import register_exception_handlers
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.services.auto_reply_service import get_auto_reply_service
@@ -168,6 +169,7 @@ async def lifespan(app: FastAPI):
     # per-request until Kafka is reachable, exactly the graceful-
     # degradation stance this function's own docstring already commits to.
     try:
+        await ensure_topics_exist()
         await start_producer()
         logger.info("kafka_producer_warmed_up")
     except Exception:
