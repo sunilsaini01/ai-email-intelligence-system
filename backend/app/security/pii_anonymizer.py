@@ -41,8 +41,26 @@ _OPERATORS = {
 @lru_cache
 def _get_analyzer():
     from presidio_analyzer import AnalyzerEngine
+    from presidio_analyzer.nlp_engine import NlpEngineProvider
 
-    return AnalyzerEngine()
+    # Presidio's AnalyzerEngine(), built with no explicit nlp_engine, defaults
+    # to looking for en_core_web_lg -- not en_core_web_sm, the model this
+    # project actually installs (requirements.txt, see the CI dependency
+    # notes there). Since en_core_web_lg was never installed, Presidio's
+    # SpacyNlpEngine.load() tried to `spacy.cli.download("en_core_web_lg")`
+    # at request time -- a live pip install from inside a running request,
+    # which fails in this container (no route to PyPI's model index) and
+    # takes the whole request down with a SystemExit. Reproduced directly:
+    # any call to /retrieval/index 500'd on this exact stack trace before
+    # this fix. Pointing NlpEngineProvider at en_core_web_sm explicitly
+    # avoids the mismatch and the network call entirely.
+    provider = NlpEngineProvider(
+        nlp_configuration={
+            "nlp_engine_name": "spacy",
+            "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+        }
+    )
+    return AnalyzerEngine(nlp_engine=provider.create_engine())
 
 
 @lru_cache
