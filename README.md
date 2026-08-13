@@ -86,7 +86,7 @@ services the REST endpoints call.
 | # | Module | Approach | Status |
 |:---:|:---|:---|:---|
 | 1 | Email Ingestion & Preprocessing | HTML stripping, tokenization, stopword removal (spaCy + NLTK) | Done |
-| 2 | Spam Detection | TF-IDF + calibrated linear SVM | Done — 99.44% recall / 91.33% precision on held-out test data. Known gap: precision drops on ordinary business email outside the evaluation domain (see Known Limitations) |
+| 2 | Spam Detection | TF-IDF + calibrated linear SVM | Done — 97.22% recall on held-out SpamAssassin data; trained on real Enron business email as ham, 0.78% false-positive rate on a held-out Enron sample (see Known Limitations) |
 | 3 | Priority Classification | TF-IDF + logistic regression | Pipeline complete — trained on synthetic labels, not yet human-annotated |
 | 4 | Email Categorization | TF-IDF + multi-label logistic regression | Pipeline complete — trained on synthetic labels |
 | 5 | Email Summarization | Extractive (default) + abstractive (DistilBART, opt-in) | Both serving — abstractive evaluated on an off-domain (news) dataset |
@@ -98,7 +98,9 @@ services the REST endpoints call.
 | 11 | Manager Dashboard & Analytics | React + TypeScript SPA over a dedicated analytics query layer | Done — SLA tracking, review queue, CSV/PDF export, WebSocket + polling live updates |
 | 12 | Human Feedback Loop | Unified `feedback_events` table across all modules | Done — feeds the dashboard's review queue and retraining-trigger audit log |
 | 13 | Multi-Agent Architecture | Kafka orchestrator + 6 independent specialist agent consumers | Done — real Kafka + Postgres verified, idempotent under at-least-once delivery, retry with exponential backoff |
-| 14–15 | CI/CD, Cloud Deployment, Monitoring | GitHub Actions, Kubernetes, MLflow, alerting | In progress |
+| 14 | CI/CD | GitHub Actions — lint, unit/integration tests, model sanity checks, Docker build, secret scan | Done — live on `origin/main`, all gates enforced |
+| 15 | Kubernetes / Horizontal Scaling | `kind`-validated manifests — StatefulSets for Postgres/Kafka, scalable `api` Deployment | Done locally — real scaling, pod-kill, dependency-outage, and rolling-update tests passed against a live cluster (see `docs/architecture/architecture_kubernetes.md`). Not cloud-validated |
+| 16 | MLflow, Monitoring & Alerting | Model version tracking, Prometheus/Grafana, drift/latency/error alerting | Not started |
 
 </div>
 
@@ -153,9 +155,22 @@ services the REST endpoints call.
 Model status is reported honestly rather than uniformly as "production
 accuracy":
 
-- **Spam detection** is validated on real, held-out data (99.44% recall /
-  91.33% precision) — but that evaluation domain does not fully transfer to
-  ordinary business email, where precision is measurably lower.
+- **Spam detection** is trained on SpamAssassin plus a real Enron
+  business-email sample mixed into the ham class (`scripts/train_spam_model.py`),
+  after live testing showed a SpamAssassin-only model flagged 59.3% of
+  ordinary business email as spam — a threshold change alone couldn't fix
+  that (a model that's never seen business email as ham has no operating
+  point that both catches spam and clears legitimate mail). Retraining with
+  real business email as ham, then recalibrating the decision threshold
+  against a disjoint, never-trained-on Enron holdout
+  (`scripts/recalibrate_spam_threshold.py`), gets recall to 97.22% on
+  held-out SpamAssassin data and a 0.78% false-positive rate on 2,941
+  held-out Enron emails (down from 59.3% pre-fix, 7.0% at the naive
+  post-retraining threshold before recalibration). Still not a claim of
+  general business-email precision — Enron is one company's correspondence
+  from one era, not a representative sample of all business email. See
+  `artifacts/spam_baseline_metrics.json`'s `threshold_recalibration` field
+  for the full evidence, including every threshold trade-off considered.
 - **Priority, categorization, and intent detection** are trained on
   synthetic (heuristically-labelled) data, not human-annotated email —
   pipelines are complete and tested, but not yet PRD-compliant on data
@@ -172,7 +187,14 @@ accuracy":
   is caller-supplied and trusted, consistent across every endpoint.
 - The Orchestrator's in-flight workflow tracking is process-local (lost on
   restart); a workflow whose agent never responds at all currently stays
-  `RUNNING` indefinitely (no scheduled timeout sweep yet).
+  `RUNNING` indefinitely (no scheduled timeout sweep yet) — this is also
+  why the Kubernetes `agents` Deployment is deliberately pinned to a single
+  replica rather than horizontally scaled.
+- Kubernetes validation (`k8s/`) has only been run against a local `kind`
+  cluster — real scaling, pod-restart, and dependency-outage behavior is
+  verified there, but this is not cloud-production validation (no managed
+  Postgres/Kafka, no Ingress/TLS, no multi-node cluster tested). See
+  `docs/architecture/architecture_kubernetes.md`.
 
 None of this blocks development or testing — it means metrics are reported
 per-module with an explicit evidence status, not blended into a single
