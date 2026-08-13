@@ -31,9 +31,3 @@ class RetrainingTriggerRepository:
         await self.session.commit()
         await self.session.refresh(record)
         return record
-
-    async def get_all_for_module(self, module: str) -> list[RetrainingTrigger]:
-        result = await self.session.execute(
-            select(RetrainingTrigger).where(RetrainingTrigger.module == module).order_by(RetrainingTrigger.triggered_at.desc())
-        )
-        return list(result.scalars().all())
