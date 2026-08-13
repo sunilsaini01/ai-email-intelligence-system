@@ -1,0 +1,18 @@
+# Headless (clusterIP: None) -- required for a StatefulSet's governing
+# Service, and gives postgres-0 a stable DNS record
+# (postgres-0.postgres.email-ai.svc.cluster.local). The plain Service name
+# "postgres" still resolves too, which is what POSTGRES_HOST in the
+# ConfigMap relies on -- fine at replicas=1, where there is only one
+# endpoint to round-robin across.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: email-ai
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

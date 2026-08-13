@@ -1,0 +1,28 @@
+# The baseline model artifacts (spam/priority/category/intent/*.joblib) are
+# baked into email-ai-api:k8s at build time (see docker/Dockerfile.k8s) --
+# read-only, identical on every replica, no PVC needed for those.
+#
+# The Chroma vector store under artifacts/chroma is different: it is
+# written to at runtime (retrieval indexing) and must survive Pod restarts,
+# so it needs a real volume. This PVC is mounted at /artifacts/chroma via
+# subPath in both api and agents Deployments, overlaying just that one
+# subdirectory on top of the image's baked-in (near-empty) copy.
+#
+# KNOWN RISK, not fixed in this phase: both api and agents write to this
+# same embedded, file-backed Chroma store. chromadb.PersistentClient is not
+# designed for concurrent multi-process writers -- see
+# docs/architecture_kubernetes.md, "Model Artifact Strategy" for the full
+# analysis. On this single-node kind cluster ReadWriteOnce works because
+# every Pod lands on the same node; a real multi-node cluster would need a
+# networked vector store instead, which is a redesign explicitly out of
+# scope here ("do not redesign the ML system").
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: artifacts-chroma
+  namespace: email-ai
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 512Mi

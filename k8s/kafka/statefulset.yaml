@@ -1,0 +1,101 @@
+# Single broker, single replica -- same topology as docker-compose.yml's
+# kafka service, not a multi-broker cluster. A real HA Kafka deployment
+# (3+ brokers, replication factor > 1) is out of scope for this phase; see
+# docs/architecture_kubernetes.md, "Stateful Components".
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: email-ai
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+        - name: kafka
+          image: apache/kafka:3.9.0
+          ports:
+            - containerPort: 9092
+            - containerPort: 29092
+            - containerPort: 29093
+          env:
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+            # Advertised listener uses the StatefulSet Pod's stable DNS name
+            # (kafka-0.kafka), not the plain Service name -- this is what
+            # lets a client that resolved the broker once keep reconnecting
+            # to the same identity across Pod restarts, which is how Kafka
+            # expects broker addressing to behave. docker-compose.yml used
+            # the container name (kafka) for the same reason; StatefulSet
+            # Pod DNS is the Kubernetes equivalent.
+            #
+            # KAFKA_LISTENERS deliberately does NOT bind to 0.0.0.0 here,
+            # even though docker-compose.yml did for its PLAINTEXT_HOST
+            # listener -- binding the PLAINTEXT/CONTROLLER listeners to
+            # 0.0.0.0 made this image's own KRaft storage-format step
+            # reject the config outright ("advertised.listeners cannot use
+            # the nonroutable meta-address 0.0.0.0"), confirmed by a real
+            # CrashLoopBackOff when first deployed. Binding to the Pod's
+            # own resolvable DNS name instead (as Compose did with the
+            # container name "kafka") avoids the check entirely.
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://kafka-0.kafka:29092,CONTROLLER://kafka-0.kafka:29093"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://kafka-0.kafka:29092"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@kafka-0.kafka:29093"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka-0.kafka:29092"
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka-0.kafka:29092"
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: kafka-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

@@ -1,0 +1,19 @@
+# migration-job.yaml is NOT listed here on purpose -- it's a one-time,
+# manually-applied operation, not part of the steady-state stack. See
+# docs/kubernetes_runbook.md for the exact apply order.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: email-ai
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
+  - kafka/statefulset.yaml
+  - kafka/service.yaml
+  - artifacts-chroma-pvc.yaml
+  - api-deployment.yaml
+  - api-service.yaml
+  - agents-deployment.yaml

@@ -1,0 +1,29 @@
+# Kubernetes-specific image layer.
+#
+# Docker Compose gives every container the model artifacts via a host bind
+# mount (./artifacts:/artifacts in docker-compose.yml) -- Kubernetes has no
+# equivalent of a host bind mount for a locally built image, and a container
+# started from a Pod spec has no access to the developer's filesystem at all.
+#
+# For this phase the simplest reliable strategy is to bake artifacts/ into
+# the image (see docs/architecture_kubernetes.md, "Model Artifact Strategy"):
+# every replica then loads the exact same artifact version by construction,
+# with no PVC-population step or init container needed. Trade-off: updating
+# a model requires an image rebuild, and the image is ~70MB larger. The
+# mutable Chroma index directory is still overlaid from a PersistentVolume
+# at deploy time (see k8s/postgres and the artifacts-chroma PVC) so retrieval
+# writes survive pod restarts -- this file only bakes the read-only baseline
+# models and vectorizers.
+#
+# Build context is the REPO ROOT (not backend/), so this must be built as:
+#   docker build -f docker/Dockerfile.k8s -t email-ai-api:k8s .
+FROM email-ai-api:base
+
+# --chown matters: the runtime stage runs as non-root appuser (uid 1000),
+# and app/services/feedback_service.py appends to *_feedback.jsonl files
+# under this same directory at runtime. Without --chown, COPY leaves these
+# root-owned, and appuser gets "Permission denied" on every feedback write
+# -- silently masked in Docker Compose today because the bind-mounted host
+# directory (./artifacts:/artifacts) inherits Windows' permissive ownership
+# instead of Linux file-mode bits.
+COPY --chown=appuser:appuser artifacts /artifacts

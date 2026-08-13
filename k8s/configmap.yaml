@@ -1,0 +1,33 @@
+# Non-sensitive configuration only. Everything here has a Kubernetes-specific
+# value because the corresponding backend/app/core/config.py default assumes
+# a single-host dev machine (postgres_host="localhost", kafka on
+# "localhost:9092", etc.) -- none of that resolves inside a Pod. Settings
+# not listed here keep their code defaults (see backend/app/core/config.py);
+# only values that must differ between environments are surfaced here, to
+# avoid duplicating the whole Settings class into YAML.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: email-ai-config
+  namespace: email-ai
+data:
+  APP_ENV: "kubernetes-local"
+  DEBUG: "false"
+  API_VERSION: "v1"
+  HOST: "0.0.0.0"
+  PORT: "8000"
+  LOG_LEVEL: "INFO"
+  LOG_JSON: "true"
+  CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+
+  # postgres / kafka Service names (see k8s/postgres, k8s/kafka) -- not
+  # localhost, not a Compose service name, a Kubernetes Service DNS name.
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "email_intelligence"
+
+  # kafka is a single-replica StatefulSet (see k8s/kafka/statefulset.yaml)
+  # so its stable per-pod DNS name is used as the advertised listener, not
+  # the governing Service name -- see that file's comments for why.
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-0.kafka:29092"
+  KAFKA_CONSUMER_GROUP_PREFIX: "email-ai"

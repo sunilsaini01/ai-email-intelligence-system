@@ -1,0 +1,83 @@
+# The horizontally scalable workload for FR-69. Stateless by design: no
+# in-memory state survives a request (see docs/architecture_kubernetes.md,
+# "Workload Classification" for the full stateless-vs-stateful analysis).
+# Compare with agents-deployment.yaml, which is deliberately NOT scaled.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: email-ai
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        # fsGroup chowns the artifacts-chroma PVC to group 1000 on mount so
+        # appuser (uid/gid 1000 in the image, see docker/Dockerfile) can
+        # write to it -- without this the volume mounts root-owned and every
+        # Chroma write fails with Permission denied.
+        fsGroup: 1000
+      containers:
+        - name: api
+          image: email-ai-api:k8s
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: email-ai-config
+            - secretRef:
+                name: email-ai-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: artifacts-chroma
+              mountPath: /artifacts/chroma
+          # Model warmup (7 ML services + Chroma embedder + LLM provider,
+          # see app/main.py lifespan) can take longer than a normal request
+          # timeout. startupProbe absorbs that: liveness/readiness are not
+          # evaluated until it succeeds once, so slow warmup cannot look
+          # like a crash and trigger a restart loop.
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            periodSeconds: 5
+            failureThreshold: 30 # up to 150s for warmup before Kubernetes gives up
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: 8000
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            # Initial local values from observed single-replica behavior on
+            # this dev machine, not a measured production capacity plan --
+            # see docs/architecture_kubernetes.md, "Resource Requests/Limits".
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1536Mi
+      volumes:
+        - name: artifacts-chroma
+          persistentVolumeClaim:
+            claimName: artifacts-chroma

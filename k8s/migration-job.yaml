@@ -1,0 +1,49 @@
+# Runs `alembic upgrade head` exactly once, as a Job -- not as a startup
+# step in the api/agents Deployments. If every api replica ran migrations
+# on boot, N replicas starting concurrently would race to apply the same
+# migration; a Job is the standard way to make this a single, controlled
+# operation. This mirrors what the project already does today: no app code
+# runs migrations automatically (see docs/architecture_kubernetes.md,
+# "Database Migration Strategy" -- confirmed via repo audit, not assumed).
+#
+# Ordering is manual, not enforced by Kubernetes itself: apply this Job
+# after postgres is Ready and before scaling up api/agents. See
+# docs/kubernetes_runbook.md for the exact command sequence.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: email-ai
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:15-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432 -U "$POSTGRES_USER"; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: email-ai-secrets
+                  key: POSTGRES_USER
+      containers:
+        - name: migrate
+          image: email-ai-api:k8s
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: email-ai-config
+            - secretRef:
+                name: email-ai-secrets

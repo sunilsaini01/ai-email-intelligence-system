@@ -1,0 +1,29 @@
+# Headless, same reasoning as k8s/postgres/service.yaml: required as the
+# StatefulSet's governing Service, and gives kafka-0 the stable DNS name
+# used in KAFKA_ADVERTISED_LISTENERS and KAFKA_BOOTSTRAP_SERVERS.
+#
+# publishNotReadyAddresses: true is required here, not optional: by default
+# a headless Service only publishes a Pod's DNS record once that Pod is
+# Ready. Kafka binds its own listener socket to its own hostname
+# (kafka-0.kafka) during startup -- before it can possibly be Ready -- so
+# without this flag the broker crash-loops trying to resolve its own
+# address (confirmed for real: java.net.UnresolvedAddressException on
+# first deploy, "Socket server failed to bind to kafka-0.kafka:29093").
+# Postgres doesn't need this because it never resolves its own hostname.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: email-ai
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: kafka
+  ports:
+    - name: broker
+      port: 29092
+      targetPort: 29092
+    - name: controller
+      port: 29093
+      targetPort: 29093

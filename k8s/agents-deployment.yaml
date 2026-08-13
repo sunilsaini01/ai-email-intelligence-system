@@ -1,0 +1,81 @@
+# Deliberately replicas: 1, deliberately no Horizontal Pod Autoscaler here.
+#
+# This process (`python -m app.agents.runner`) runs the Orchestrator, whose
+# in-flight-workflow tracking is a plain in-memory dict
+# (Orchestrator._pending, backend/app/agents/orchestrator.py) with no
+# leader election, no distributed lock, and no external state store. Two
+# replicas would each build an independent _pending dict and could both
+# react to messages from the same Kafka consumer groups -- there is no
+# dedup/coordination layer to make that safe. This is a pre-existing,
+# already-disclosed limitation (see docs/architecture/architecture_multi_agent.md
+# and the Phase 12 report), not something introduced or fixed in this phase.
+#
+# The 6 specialist agents (Spam/Priority/Category/Sentiment/Intent/
+# Summarization) bundled in this same process ARE individually stateless
+# Kafka consumers and would be safe to scale on their own -- but splitting
+# them out of this one process into 6 separate Deployments is a code change
+# to app/agents/runner.py, which is out of scope here ("do not redesign the
+# ML system"). FR-69 is demonstrated via the api Deployment instead; see
+# docs/architecture_kubernetes.md, "Workload Classification".
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agents
+  namespace: email-ai
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # never run two copies of this process at once, even transiently during a rollout
+  selector:
+    matchLabels:
+      app: agents
+  template:
+    metadata:
+      labels:
+        app: agents
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: agents
+          image: email-ai-api:k8s
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.agents.runner"]
+          envFrom:
+            - configMapRef:
+                name: email-ai-config
+            - secretRef:
+                name: email-ai-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: artifacts-chroma
+              mountPath: /artifacts/chroma
+          # No HTTP server exists in this process (confirmed via repo audit
+          # -- docker-compose.yml disables the shared image's HTTP
+          # healthcheck for this same service, for the same reason). An
+          # exec probe checking the actual consumer process is alive is
+          # the closest real equivalent; there is no readiness probe
+          # because nothing ever routes traffic to this Pod via a Service.
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "app.agents.runner"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1536Mi
+      volumes:
+        - name: artifacts-chroma
+          persistentVolumeClaim:
+            claimName: artifacts-chroma
