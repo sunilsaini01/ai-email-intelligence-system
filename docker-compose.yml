@@ -1,148 +1,218 @@
-# Local development stack: API + Postgres.
+# Local development stack: API + Postgres + Kafka + Multi-Agent workers.
 #
-# Why depends_on with a healthcheck condition, not just depends_on:
-#   Plain `depends_on` only waits for the container to START, not for Postgres
-#   to be ready to accept connections — a classic source of "works on second
-#   run only" bugs. The healthcheck below makes the API wait for an actual
-#   successful `pg_isready` before starting.
+# Port architecture:
+#   E-commerce RAG:
+#       host 8000 -> container 8000
+#
+#   Email Intelligence API:
+#       host 8001 -> container 8000
+#
+#   Email Intelligence PostgreSQL:
+#       host 5433 -> container 5432
+#
+# IMPORTANT:
+#   Host-side PostgreSQL access uses localhost:5433.
+#   Containers communicate with PostgreSQL using postgres:5432.
+#
+#   Therefore:
+#       POSTGRES_PORT=5432 inside Docker
+#       localhost:5433 from Windows host
 
 services:
+
+  # PostgreSQL
   postgres:
     image: postgres:15-alpine
     container_name: email_ai_postgres
     restart: unless-stopped
+
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-email_intelligence}
-    # If you have a native (non-Docker) Postgres already installed and
-    # running on this machine, it is very likely ALSO listening on host
-    # port 5432 — and on Windows in particular, both can end up bound
-    # simultaneously without Docker raising a "port already allocated"
-    # error, so `docker compose up` appears to succeed. When that happens,
-    # connections to localhost:5432 can silently land on the NATIVE
-    # Postgres instead of this container — you'll see confusing
-    # "password authentication failed" errors using these exact
-    # POSTGRES_USER/POSTGRES_PASSWORD values, because they're valid for
-    # THIS container, not your native install. (Discovered the hard way
-    # verifying the Phase 4 Alembic migrations — see
-    # docs/architecture_priority_classification.md "Performance".)
-    # If you hit this: change the mapping below to e.g. "5433:5432" and set
-    # POSTGRES_PORT=5433 in backend/.env to match.
+
+    # Host port 5433 -> container port 5432.
+    #
+    # This prevents collision with:
+    #   - native PostgreSQL on Windows
+    #   - other projects using localhost:5432
     ports:
       - "5433:5432"
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-email_intelligence}"
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # Phase 12 (Multi-Agent Architecture) -- apache/kafka official image,
-  # KRaft mode: no separate Zookeeper container. Chosen specifically for
-  # this project's Windows dev machine, which has already hit real
-  # port-collision problems running just Postgres (see the postgres
-  # service comment above) -- one extra container instead of two is a
-  # direct risk reduction here, not just a simplification in the
-  # abstract. See docs/kafka_architecture.md "Broker Decision".
-  #
-  # Two listeners, same reasoning as POSTGRES_HOST below: PLAINTEXT is for
-  # other containers on the compose network (api, agent consumers --
-  # KAFKA_BOOTSTRAP_SERVERS=kafka:29092), PLAINTEXT_HOST is for anything
-  # running directly on the host (KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-  # in backend/.env for local, non-Docker `uvicorn`/consumer runs).
-  # If host port 9092 turns out to already be in use (same class of
-  # problem documented for Postgres/5432 above), remap the host side only
-  # (e.g. "9093:9092") and update KAFKA_ADVERTISED_LISTENERS' host port to
-  # match -- the internal 29092 listener is unaffected either way.
+
+  # Kafka
   kafka:
     image: apache/kafka:3.9.0
     container_name: email_ai_kafka
     restart: unless-stopped
+
     ports:
       - "9092:9092"
+
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+
+      # Internal Docker listener:
+      #   kafka:29092
+      #curl.exe -v http://127.0.0.1:8001/api/v1/health
+      # Host listener:
+      #   localhost:9092
+
+      KAFKA_LISTENERS: >-
+        PLAINTEXT://kafka:29092,
+        CONTROLLER://kafka:29093,
+        PLAINTEXT_HOST://0.0.0.0:9092
+
+      KAFKA_ADVERTISED_LISTENERS: >-
+        PLAINTEXT://kafka:29092,
+        PLAINTEXT_HOST://localhost:9092
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >-
+        CONTROLLER:PLAINTEXT,
+        PLAINTEXT:PLAINTEXT,
+        PLAINTEXT_HOST:PLAINTEXT
+
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"
+        ]
       interval: 10s
       timeout: 10s
       retries: 10
       start_period: 20s
+
     volumes:
       - kafka_data:/var/lib/kafka/data
 
+
+  # FastAPI
   api:
     build:
       context: ./backend
       dockerfile: ../docker/Dockerfile
+
     container_name: email_ai_api
     restart: unless-stopped
+
     env_file:
       - ./backend/.env
+
     environment:
-      POSTGRES_HOST: postgres   # service name on the compose network, not localhost
+      # Docker-internal PostgreSQL configuration
+      #
+      # DO NOT use 5433 here.
+      #
+      # 5433 is the Windows HOST port.
+      # PostgreSQL itself listens on 5432 inside the container.
+      #
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+
+      # Database credentials/database name are inherited from backend/.env.
+      # Explicit defaults are provided so Compose remains predictable.
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-email_intelligence}
+
+      # Docker-internal Kafka address.
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+    # Email Intelligence API:
+    #
+    # Windows:
+    #   http://localhost:8001
+    #
+    # Container:
+    #   http://0.0.0.0:8000
     ports:
-      - "8000:8000"
+      - "8001:8000"
+
     depends_on:
       postgres:
         condition: service_healthy
       kafka:
         condition: service_healthy
+
     volumes:
-      - ./backend/app:/app/app   # live-reload mount for local dev only
-      # Spam/Priority/Category/Intent load their trained artifacts from
-      # <repo_root>/artifacts (see e.g. app/services/spam_service.py's
-      # _DEFAULT_ARTIFACT_DIR). Without this mount the container has no
-      # access to artifacts/ at all -- those 4 services fail to warm up
-      # on startup (only Sentiment/VADER and Summarization, which don't
-      # load a local joblib file, would appear to work).
+      # Live source-code mount for local development.
+      - ./backend/app:/app/app
+
+      # ML artifacts used by Spam/Priority/Category/Intent services.
       - ./artifacts:/artifacts
 
-  # Phase 12 -- runs the Orchestrator + all 6 specialist agent consumers
-  # in one process (see backend/app/agents/runner.py's module docstring
-  # for why one process, not 7 containers, at this project's current
-  # scale). Separate container from `api` because it's a long-running
-  # consumer loop, not a request/response server -- restarting it must
-  # not restart the API and vice versa.
+
+  # Multi-Agent worker
   agents:
     build:
       context: ./backend
       dockerfile: ../docker/Dockerfile
+
     container_name: email_ai_agents
     restart: unless-stopped
-    command: ["python", "-m", "app.agents.runner"]
-    # The image's HEALTHCHECK (docker/Dockerfile) curls localhost:8000/api/v1/health,
-    # which only the `api` service's uvicorn process listens on. This
-    # service runs a pure Kafka consumer loop with no HTTP server, so
-    # that check always fails here -- not a real problem, just the wrong
-    # check for this command. Disabled rather than left permanently red.
-    healthcheck:
-      disable: true
+
+    command:
+      - python
+      - -m
+      - app.agents.runner
+
     env_file:
       - ./backend/.env
+
     environment:
+      # Same Docker-internal PostgreSQL configuration as API.
       POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-email_intelligence}
+
+      # Docker-internal Kafka address.
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
     depends_on:
       postgres:
         condition: service_healthy
       kafka:
         condition: service_healthy
-    volumes:
-      - ./backend/app:/app/app
-      - ./artifacts:/artifacts   # same reason as the api service above
 
+    volumes:
+      # Live source-code mount for local development.
+      - ./backend/app:/app/app
+
+      # Same ML artifacts available to agents.
+      - ./artifacts:/artifacts
+
+    # The agents container runs a Kafka consumer process,
+    # NOT an HTTP server.
+    #
+    # Therefore the Dockerfile HTTP healthcheck does not apply here.
+    healthcheck:
+      disable: true
+
+
+# Persistent Docker volumes
 volumes:
   postgres_data:
   kafka_data:

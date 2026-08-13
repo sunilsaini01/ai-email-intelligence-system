@@ -8,11 +8,16 @@
 // happens to also be listening on [::1]:8000, not this project's backend
 // (which only binds IPv4). Using the literal IPv4 address sidesteps that
 // resolution order entirely rather than depending on it.
-export const API_BASE_URL: string =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000/api/v1";
+export const API_BASE_URL = (
+          import.meta.env.VITE_API_BASE_URL ??
+          "http://127.0.0.1:8001/api/v1"
+        ).replace(/\/$/, "");
 
-export const WS_BASE_URL: string =
-  (import.meta.env.VITE_WS_BASE_URL as string | undefined) ?? "ws://127.0.0.1:8000/api/v1";
+
+export const WS_BASE_URL = (
+          import.meta.env.VITE_WS_BASE_URL ??
+          "ws://127.0.0.1:8001/api/v1"
+        ).replace(/\/$/, "");
 
 export class ApiError extends Error {
   status: number;
