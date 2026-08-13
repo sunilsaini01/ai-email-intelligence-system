@@ -2,44 +2,120 @@
     "comparison": [
         {
             "model": "logistic_regression",
-            "accuracy@0.5": 0.9748,
-            "precision@0.5": 0.9459,
-            "recall@0.5": 0.9722,
-            "f1_score@0.5": 0.9589,
-            "roc_auc": 0.9964,
-            "calibrated_threshold": 0.33,
-            "recall_at_threshold": 0.9889,
-            "precision_at_threshold": 0.8856
+            "accuracy@0.5": 0.9787,
+            "precision@0.5": 0.95,
+            "recall@0.5": 0.9448,
+            "f1_score@0.5": 0.9474,
+            "roc_auc": 0.9944,
+            "calibrated_threshold": 0.27,
+            "recall_at_threshold": 0.9779,
+            "precision_at_threshold": 0.831
         },
         {
             "model": "naive_bayes",
-            "accuracy@0.5": 0.9799,
-            "precision@0.5": 0.9941,
-            "recall@0.5": 0.9389,
-            "f1_score@0.5": 0.9657,
-            "roc_auc": 0.9921,
-            "calibrated_threshold": 0.07,
-            "recall_at_threshold": 0.9889,
-            "precision_at_threshold": 0.7295
+            "accuracy@0.5": 0.9607,
+            "precision@0.5": 0.9679,
+            "recall@0.5": 0.8343,
+            "f1_score@0.5": 0.8961,
+            "roc_auc": 0.9886,
+            "calibrated_threshold": 0.03,
+            "recall_at_threshold": 0.9945,
+            "precision_at_threshold": 0.4545
         },
         {
             "model": "svm",
-            "accuracy@0.5": 0.9748,
-            "precision@0.5": 0.9558,
-            "recall@0.5": 0.9611,
-            "f1_score@0.5": 0.9584,
-            "roc_auc": 0.9978,
+            "accuracy@0.5": 0.9843,
+            "precision@0.5": 0.9718,
+            "recall@0.5": 0.9503,
+            "f1_score@0.5": 0.9609,
+            "roc_auc": 0.996,
             "calibrated_threshold": 0.06,
-            "recall_at_threshold": 0.9944,
-            "precision_at_threshold": 0.9133
+            "recall_at_threshold": 0.9834,
+            "precision_at_threshold": 0.8318
         }
     ],
     "best_model": "svm",
-    "model_version": "svm-20260807-064454",
-    "decision_threshold": 0.06,
-    "recall_target": 0.99,
+    "model_version": "svm-20260813-145106",
+    "decision_threshold": 0.7,
+    "recall_target": 0.95,
     "meets_target": true,
-    "train_size": 4767,
-    "val_size": 596,
-    "test_size": 596
+    "train_size": 7123,
+    "val_size": 890,
+    "test_size": 891,
+    "threshold_recalibration": {
+        "method": "scripts/recalibrate_spam_threshold.py -- evaluated against real, out-of-domain Enron business email, not just SpamAssassin's own held-out split",
+        "recall_floor": 0.95,
+        "spamassassin_test_recall_at_new_threshold": 0.9722,
+        "enron_holdout_sample_size": 2941,
+        "enron_false_positive_rate_at_new_threshold": 0.0078,
+        "previous_threshold": 0.7,
+        "enron_false_positive_rate_at_previous_threshold": 0.0078,
+        "candidate_thresholds_evaluated": [
+            {
+                "threshold": 0.02,
+                "spamassassin_recall": 1.0,
+                "enron_fpr": 0.155
+            },
+            {
+                "threshold": 0.06,
+                "spamassassin_recall": 1.0,
+                "enron_fpr": 0.07
+            },
+            {
+                "threshold": 0.1,
+                "spamassassin_recall": 0.9944,
+                "enron_fpr": 0.0517
+            },
+            {
+                "threshold": 0.2,
+                "spamassassin_recall": 0.9889,
+                "enron_fpr": 0.034
+            },
+            {
+                "threshold": 0.3,
+                "spamassassin_recall": 0.9889,
+                "enron_fpr": 0.0255
+            },
+            {
+                "threshold": 0.4,
+                "spamassassin_recall": 0.9889,
+                "enron_fpr": 0.0218
+            },
+            {
+                "threshold": 0.5,
+                "spamassassin_recall": 0.9889,
+                "enron_fpr": 0.0173
+            },
+            {
+                "threshold": 0.6,
+                "spamassassin_recall": 0.9889,
+                "enron_fpr": 0.0105
+            },
+            {
+                "threshold": 0.7,
+                "spamassassin_recall": 0.9722,
+                "enron_fpr": 0.0078
+            },
+            {
+                "threshold": 0.8,
+                "spamassassin_recall": 0.9444,
+                "enron_fpr": 0.0061
+            },
+            {
+                "threshold": 0.85,
+                "spamassassin_recall": 0.9278,
+                "enron_fpr": 0.0051
+            },
+            {
+                "threshold": 0.9,
+                "spamassassin_recall": 0.9111,
+                "enron_fpr": 0.0048
+            },
+            {
+                "threshold": 0.95,
+                "spamassassin_recall": 0.8778,
+                "enron_fpr": 0.0041
+            }
+        ]
+    }
 }

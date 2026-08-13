@@ -1,6 +1,15 @@
 """
 Phase 3 — Spam Detection: train and evaluate baseline models on the real
-SpamAssassin corpus (not the toy in-memory samples used by the smoke tests).
+SpamAssassin corpus (not the toy in-memory samples used by the smoke tests),
+with a real Enron business-email sample mixed into the ham class.
+
+Why the Enron mix: SpamAssassin-only training left the model never having
+seen real, modern business correspondence as ham -- live testing found
+59.3% of ordinary business email flagged as spam even after recalibrating
+the decision threshold alone (see scripts/recalibrate_spam_threshold.py,
+which now evaluates against a DIFFERENT, disjoint Enron slice than the one
+mixed in here -- see split_enron_corpus()'s docstring for how that's kept
+leak-free).
 
 Run from the repo root:
     PYTHONPATH=backend python backend/scripts/train_spam_model.py
@@ -8,6 +17,8 @@ Run from the repo root:
 Produces:
     artifacts/spam_baseline.joblib   — the best baseline model (by recall)
     artifacts/spam_baseline_metrics.json — comparison report for all baselines
+    data/interim/enron_holdout_eval.parquet — held-out Enron slice for
+        scripts/recalibrate_spam_threshold.py
 """
 
 import sys
@@ -21,6 +32,9 @@ from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.data.pipeline_metadata import PipelineRun
+from app.data_ingestion.checksum_utils import verify_checksum
+from app.data_ingestion.enron_loader import load_enron_kaggle
 from app.data_ingestion.spamassassin_loader import load_spamassassin
 from app.evaluation.model_evaluator import evaluate_model
 from app.pipeline.pipeline_config import PipelineConfig
@@ -34,6 +48,25 @@ logger = get_logger()
 RAW_DATA_DIR = "data/raw/spamassassin"
 MODEL_TYPES = ["logistic_regression", "naive_bayes", "svm"]
 RECALL_TARGET = 0.99
+
+# Real, out-of-domain business email mixed into the ham class -- SpamAssassin
+# alone (2000s mailing-list-era content) never taught this model what
+# ordinary modern business correspondence looks like, which is exactly why
+# live testing found 59.3% of real business email flagged as spam even
+# after threshold recalibration (scripts/recalibrate_spam_threshold.py) --
+# a threshold can only move the operating point on a decision boundary the
+# model already has; it can't teach the model a class it's never seen.
+# Sizes are deliberately disjoint by construction (see split_enron_corpus):
+# ENRON_TRAIN_MIX_SIZE rows go into training, the NEXT ENRON_HOLDOUT_SIZE
+# rows are saved untouched for scripts/recalibrate_spam_threshold.py to
+# evaluate against -- if both scripts sampled independently (even with
+# different random seeds) there'd be no guarantee against overlap, which
+# would make "held-out" evaluation meaningless.
+ENRON_CSV = "data/raw/enron/emails.csv"
+ENRON_CHECKSUM = "data/raw/enron/CHECKSUM.sha256"
+ENRON_TRAIN_MIX_SIZE = 3000
+ENRON_HOLDOUT_SIZE = 3000
+ENRON_HOLDOUT_PATH = "data/interim/enron_holdout_eval.parquet"
 
 # Overrides PipelineConfig's default "balanced" — see that field's docstring.
 # Derived empirically for THIS corpus by scripts/experiment_class_weight_tuning.py:
@@ -59,6 +92,41 @@ def load_dataset() -> pd.DataFrame:
     logger.info("Class balance:\n%s", df["spam_label"].value_counts())
 
     return df
+
+
+def split_enron_corpus() -> pd.DataFrame:
+    """Loads real Enron business email, verifies its checksum, shuffles it
+    deterministically, and returns only the training-mix slice -- rows
+    [ENRON_TRAIN_MIX_SIZE : ENRON_TRAIN_MIX_SIZE + ENRON_HOLDOUT_SIZE] are
+    written to ENRON_HOLDOUT_PATH untouched (not returned here) so
+    scripts/recalibrate_spam_threshold.py can evaluate against them without
+    ever re-deriving the same rows this function trained on."""
+    logger.info("Verifying Enron corpus checksum before use")
+    verify_checksum(ENRON_CSV, ENRON_CHECKSUM)
+
+    logger.info("Loading Enron corpus (real business email) for training mix + held-out eval")
+    df = load_enron_kaggle(ENRON_CSV)
+    df = df[df["body_text_raw"].str.len() > 20].reset_index(drop=True)
+
+    # frac=1 with a fixed random_state -- a deterministic full shuffle, not
+    # two independent .sample() calls, is what makes the two slices below
+    # provably disjoint rather than "probably disjoint."
+    df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+    train_mix = df.iloc[:ENRON_TRAIN_MIX_SIZE].copy()
+    holdout = df.iloc[ENRON_TRAIN_MIX_SIZE : ENRON_TRAIN_MIX_SIZE + ENRON_HOLDOUT_SIZE].copy()
+
+    Path(ENRON_HOLDOUT_PATH).parent.mkdir(parents=True, exist_ok=True)
+    holdout.to_parquet(ENRON_HOLDOUT_PATH)
+    logger.info(
+        "Enron split: %d rows into training mix, %d rows held out -> %s",
+        len(train_mix),
+        len(holdout),
+        ENRON_HOLDOUT_PATH,
+    )
+
+    train_mix["spam_label"] = "ham"  # every Enron email is genuine business correspondence, never spam
+    return train_mix[["body_text_raw", "spam_label"]].assign(source="enron")
 
 
 def clean_dataset(df: pd.DataFrame) -> pd.DataFrame:
@@ -180,11 +248,43 @@ def train_and_evaluate(train_df, val_df, test_df):
 
 
 def main():
+    # PipelineRun existed since Phase 1/2 scaffolding but was never actually
+    # called by any real training script (confirmed by a dead-code sweep --
+    # its only prior reference was a since-deleted test, which left a stray
+    # dummy run_metadata.json with a fake "dummy_checksum_123" checksum
+    # sitting in data/processed/v1.0/, now removed). Every OTHER dataset
+    # script in this project (generate_synthetic_*.py, etc.) already writes
+    # its own ad-hoc run_metadata.json rather than using this shared class --
+    # wiring it in here, for the one training script with no lineage record
+    # at all, uses the utility as originally intended instead of adding a
+    # fourth reimplementation of the same pattern.
+    run = PipelineRun(version="spam_baseline_v1", script_name="train_spam_model.py")
+    run.log_input(RAW_DATA_DIR, checksum="not applicable -- directory of individual raw email files, not a single checksummable archive")
+
     df = load_dataset()
+    run.log_step("load_dataset", {"raw_email_count": len(df)})
+
+    enron_mix = split_enron_corpus()
+    run.log_input(ENRON_CSV, checksum=Path(ENRON_CHECKSUM).read_text().strip())
+    run.log_step(
+        "mix_in_enron_business_email",
+        {
+            "enron_train_mix_count": len(enron_mix),
+            "reason": "SpamAssassin-only ham never taught the model real business-email "
+            "language; live testing found 59.3% of business email flagged as spam even "
+            "after threshold recalibration alone",
+        },
+    )
+    df = pd.concat([df, enron_mix], ignore_index=True)
+
     df = clean_dataset(df)
+    run.log_step("clean_dataset", {"cleaned_email_count": len(df)})
+
     train_df, val_df, test_df = split_dataset(df)
+    run.log_step("split_dataset", {"train": len(train_df), "val": len(val_df), "test": len(test_df)})
 
     results, trained = train_and_evaluate(train_df, val_df, test_df)
+    run.log_step("train_and_evaluate", {"models_compared": [r["model"] for r in results]})
 
     comparison = pd.DataFrame(results).sort_values(
         ["recall_at_threshold", "precision_at_threshold"], ascending=[False, False]
@@ -193,7 +293,28 @@ def main():
     print("\n================ SPAM BASELINE COMPARISON (real test set) ================\n")
     print(comparison.to_string(index=False))
 
-    best_row = comparison.iloc[0]
+    # Sorting on recall alone (the previous selection rule) picks whichever
+    # model's own pick_recall_threshold() found the LOWEST threshold needed
+    # to clear RECALL_TARGET -- with the Enron mix added, that was
+    # naive_bayes at threshold=0.03, recall=0.9945, but precision=0.4545
+    # (confirmed by actually running this: naive_bayes "won" the old sort
+    # over SVM's recall=0.9834/precision=0.8318, which is obviously the
+    # better real-world model). A model that flags more ham as spam than it
+    # correctly catches spam is worse than the false-positive problem this
+    # retraining set out to fix, not an improvement -- so precision has to
+    # gate selection too, not just break ties.
+    MIN_PRECISION_FLOOR = 0.7
+    viable = comparison[comparison["precision_at_threshold"] >= MIN_PRECISION_FLOOR]
+    if viable.empty:
+        print(
+            f"\n[WARN] No model clears the {MIN_PRECISION_FLOOR} precision floor at its "
+            "calibrated threshold -- falling back to pure recall ranking (previous behavior)."
+        )
+        best_row = comparison.iloc[0]
+    else:
+        best_row = viable.sort_values(
+            ["recall_at_threshold", "precision_at_threshold"], ascending=[False, False]
+        ).iloc[0]
     best_model_type = best_row["model"]
     meets_target = bool(best_row["recall_at_threshold"] >= RECALL_TARGET)
 
@@ -230,6 +351,7 @@ def main():
         trained[best_model_type].pipeline,
         "spam_baseline.joblib",
     )
+    run.log_output("artifacts/spam_baseline.joblib", record_count=len(train_df))
 
     # Versioned copy for audit/rollback — every training run keeps its own
     # artifact under artifacts/versions/, so "what did we serve on <date>" and
@@ -254,6 +376,11 @@ def main():
         },
         "spam_baseline_metrics.json",
     )
+    run.log_output("artifacts/spam_baseline_metrics.json", record_count=len(results))
+
+    run_output_dir = Path("data/processed/spam_baseline_v1")
+    run_output_dir.mkdir(parents=True, exist_ok=True)
+    run.save(str(run_output_dir))
 
     print(f"\nModel version: {model_version}")
     print(f"Versioned artifact: artifacts/versions/spam_{model_version}.joblib")
