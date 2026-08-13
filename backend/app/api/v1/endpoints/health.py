@@ -20,7 +20,7 @@ instance killed and restarted simultaneously by the orchestrator — turning
 a DB blip into a full application outage.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,13 +41,23 @@ def liveness_check(settings: Settings = Depends(get_settings)) -> HealthResponse
 
 
 @router.get("/health/ready", response_model=ReadinessResponse)
-async def readiness_check(db: AsyncSession = Depends(get_db)) -> ReadinessResponse:
+async def readiness_check(
+    response: Response, db: AsyncSession = Depends(get_db)
+) -> ReadinessResponse:
     try:
         await db.execute(text("SELECT 1"))
         db_status = "connected"
     except Exception as e:
         print("DB ERROR:", e)
         db_status = "unreachable"
+
+    # A load balancer / Kubernetes readinessProbe reads the HTTP status
+    # code, not the response body -- returning 200 here even when degraded
+    # (as this endpoint used to) means nothing downstream can actually act
+    # on the "degraded" body field. 503 is what makes this endpoint usable
+    # as a real readiness probe target, not just an informational report.
+    if db_status != "connected":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
     return ReadinessResponse(
         status="ok" if db_status == "connected" else "degraded",
