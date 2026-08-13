@@ -217,6 +217,43 @@ jobs:
       - name: Build application image
         run: docker build -f docker/Dockerfile -t email-ai-api:ci ./backend
 
+  k8s-validate:
+    name: Kubernetes manifest validation
+    runs-on: ubuntu-latest
+    # What this validates: every manifest under k8s/ is well-formed and
+    # accepted by a real Kubernetes API server (server-side dry-run --
+    # catches invalid fields, bad API versions, schema violations that a
+    # pure YAML lint would miss). What this does NOT validate: that Pods
+    # actually start, that images pull, that probes pass, that scaling or
+    # failure behavior works -- that requires a real running cluster with
+    # the real application image (~3GB with baked-in model artifacts),
+    # which is deliberately not built or pushed here. That evidence comes
+    # from a real local kind run instead -- see
+    # docs/evidence/kubernetes_failure_analysis.md and
+    # docs/architecture/kubernetes_runbook.md. This job would not have
+    # caught the Kafka publishNotReadyAddresses bug found during that real
+    # deploy (it's a runtime networking behavior, not a schema error) --
+    # stated here explicitly so this job's coverage isn't overclaimed.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create ephemeral kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ci-validate
+      - name: Server-side dry-run apply of every manifest
+        run: |
+          kubectl apply --dry-run=server -f k8s/namespace.yaml
+          kubectl apply --dry-run=server -n email-ai -f k8s/configmap.yaml
+          kubectl apply --dry-run=server -n email-ai -f k8s/secrets.example.yaml
+          kubectl apply --dry-run=server -n email-ai -f k8s/postgres/statefulset.yaml -f k8s/postgres/service.yaml
+          kubectl apply --dry-run=server -n email-ai -f k8s/kafka/statefulset.yaml -f k8s/kafka/service.yaml
+          kubectl apply --dry-run=server -n email-ai -f k8s/artifacts-chroma-pvc.yaml
+          kubectl apply --dry-run=server -n email-ai -f k8s/api-deployment.yaml -f k8s/api-service.yaml
+          kubectl apply --dry-run=server -n email-ai -f k8s/agents-deployment.yaml
+          kubectl apply --dry-run=server -n email-ai -f k8s/migration-job.yaml
+      - name: kustomize build sanity check
+        run: kubectl kustomize k8s/ > /dev/null
+
   secret-scan:
     name: Secret safety scan
     runs-on: ubuntu-latest
@@ -239,6 +276,7 @@ jobs:
       - kafka-integration
       - model-sanity
       - docker-build
+      - k8s-validate
       - secret-scan
     steps:
       - run: echo "All Phase 13 quality gates passed."
