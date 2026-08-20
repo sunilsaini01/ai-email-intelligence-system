@@ -100,7 +100,8 @@ services the REST endpoints call.
 | 13 | Multi-Agent Architecture | Kafka orchestrator + 6 independent specialist agent consumers | Done — real Kafka + Postgres verified, idempotent under at-least-once delivery, retry with exponential backoff |
 | 14 | CI/CD | GitHub Actions — lint, unit/integration tests, model sanity checks, Docker build, secret scan | Done — live on `origin/main`, all gates enforced |
 | 15 | Kubernetes / Horizontal Scaling | `kind`-validated manifests — StatefulSets for Postgres/Kafka, scalable `api` Deployment | Done locally — real scaling, pod-kill, dependency-outage, and rolling-update tests passed against a live cluster (see `docs/architecture/architecture_kubernetes.md`). Not cloud-validated |
-| 16 | MLflow, Monitoring & Alerting | Model version tracking, Prometheus/Grafana, drift/latency/error alerting | Not started |
+| 16a | MLflow Model Registry | Postgres-backed MLflow tracking server + registry; `train_*.py` → candidate → `promote_model.py` (sanity check, promotion criteria, regression check, evidence-status integrity) → Production; `--rollback-to` | Live-verified for all 4 registrable modules (spam/priority/category/intent) — each trained for real, registered, and promoted to Production against the live Docker stack; spam additionally exercised through promote→promote-again→rollback, each step confirmed via real inference, not just metadata — see `docs/evidence/requirements_traceability_phase15a_mlflow.md`. K8s manifests exist, not yet applied to a live cluster |
+| 16b | Monitoring & Alerting (FR-72) | Prometheus/Grafana, drift/latency/error alerting | Not started — separate phase |
 
 </div>
 
@@ -190,6 +191,13 @@ accuracy":
   `RUNNING` indefinitely (no scheduled timeout sweep yet) — this is also
   why the Kubernetes `agents` Deployment is deliberately pinned to a single
   replica rather than horizontally scaled.
+- **MLflow model registry** (FR-71) has zero request-path dependency by
+  design — verified live with MLflow fully stopped (`/health/models` and
+  `/spam/predict` both unaffected). The promotion/rollback CLI does
+  **not** fail fast when MLflow is unreachable (inherits the client's
+  default retry/backoff, observed to exceed 120s) — disclosed, not fixed.
+  The MLflow UI/API itself has no authentication (same project-wide
+  auth gap as everything else). See `docs/evidence/mlflow_failure_modes.md`.
 - Kubernetes validation (`k8s/`) has only been run against a local `kind`
   cluster — real scaling, pod-restart, and dependency-outage behavior is
   verified there, but this is not cloud-production validation (no managed
