@@ -209,6 +209,30 @@ jobs:
         working-directory: backend
         run: python -m scripts.ci.model_sanity_check
 
+  model-registry-metadata:
+    name: Model registry metadata validation (Phase 15A / FR-71)
+    runs-on: ubuntu-latest
+    # Deliberately does NOT connect to a live MLflow server -- see
+    # backend/scripts/mlops/validate_registry_metadata.py's own docstring.
+    # Static checks only: every registrable module's metrics.json is
+    # well-formed, and if a `provenance` block exists, its evidence_status
+    # matches this project's own disclosed status (app/mlops/model_metadata.py
+    # MODULE_EVIDENCE_STATUS) -- catches a promoted model silently claiming
+    # stronger evidence than what's actually disclosed. Does not require
+    # requirements-mlops.txt (no mlflow import anywhere in this check).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Validate model registry metadata
+        working-directory: backend
+        run: python -m scripts.mlops.validate_registry_metadata
+
   docker-build:
     name: Docker build validation
     runs-on: ubuntu-latest
@@ -275,6 +299,7 @@ jobs:
       - postgres-integration
       - kafka-integration
       - model-sanity
+      - model-registry-metadata
       - docker-build
       - k8s-validate
       - secret-scan

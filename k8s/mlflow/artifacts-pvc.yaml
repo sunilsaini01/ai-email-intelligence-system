@@ -1,0 +1,14 @@
+# MLflow's own artifact store -- separate from artifacts-chroma-pvc.yaml
+# (the application's Chroma vector store volume). Survives Pod restarts;
+# same reasoning as every other PVC in this project (postgres-data,
+# kafka-data, artifacts-chroma).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-artifacts
+  namespace: email-ai
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi

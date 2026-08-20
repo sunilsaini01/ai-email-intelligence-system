@@ -26,7 +26,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.database.session import get_db
-from app.schemas.health import HealthResponse, ReadinessResponse
+from app.mlops.component_versions import get_component_versions
+from app.mlops.model_metadata import REGISTRABLE_MODULES, get_deployed_model_version
+from app.schemas.health import (
+    ComponentVersionResponse,
+    HealthResponse,
+    ModelVersionsResponse,
+    ReadinessResponse,
+    RegisteredModelVersion,
+)
 
 router = APIRouter(tags=["Health"])
 
@@ -63,3 +71,30 @@ async def readiness_check(
         status="ok" if db_status == "connected" else "degraded",
         database=db_status,
     )
+
+
+@router.get("/health/models", response_model=ModelVersionsResponse)
+def model_versions() -> ModelVersionsResponse:
+    """Answers "which exact model version is THIS pod serving" (Phase 15A
+    / FR-71 deployment identification). Deliberately a pure local-file
+    read, same as liveness_check() above -- no MLflow network call, no
+    database query, so this endpoint stays fast and available even if
+    MLflow or Postgres are both down. See docs/mlflow_architecture.md
+    "Why Serving Never Calls MLflow"."""
+    registered = []
+    for module in REGISTRABLE_MODULES:
+        version, provenance = get_deployed_model_version(module)
+        registered.append(RegisteredModelVersion(module=module, model_version=version, provenance=provenance))
+
+    other = [
+        ComponentVersionResponse(
+            component_name=c.component_name,
+            classification=c.classification,
+            version_identifier=c.version_identifier,
+            evidence_status=c.evidence_status.value,
+            notes=c.notes,
+        )
+        for c in get_component_versions()
+    ]
+
+    return ModelVersionsResponse(registered_models=registered, other_components=other)

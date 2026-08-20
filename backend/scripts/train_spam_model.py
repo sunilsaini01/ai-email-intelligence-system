@@ -21,7 +21,9 @@ Produces:
         scripts/recalibrate_spam_threshold.py
 """
 
+import subprocess
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -37,11 +39,21 @@ from app.data_ingestion.checksum_utils import verify_checksum
 from app.data_ingestion.enron_loader import load_enron_kaggle
 from app.data_ingestion.spamassassin_loader import load_spamassassin
 from app.evaluation.model_evaluator import evaluate_model
+from app.mlops.model_metadata import MODULE_EVIDENCE_STATUS
 from app.pipeline.pipeline_config import PipelineConfig
 from app.preprocessing.email_preprocessor import SPAM_CONFIG, EmailPreprocessor
 from app.training.artifact_manager import ArtifactManager
 from app.training.logger import get_logger
 from app.training.trainer import Trainer
+
+MLFLOW_MODEL_NAME = "spam"
+
+
+def _git_commit() -> str:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:
+        return "unknown"
 
 logger = get_logger()
 
@@ -197,6 +209,8 @@ def pick_recall_threshold(y_true, probabilities, target_recall=RECALL_TARGET):
 def train_and_evaluate(train_df, val_df, test_df):
     results = []
     trained = {}
+    mlflow_run_ids: dict[str, str | None] = {}
+    git_commit = _git_commit()
 
     for model_type in MODEL_TYPES:
         logger.info("Training %s", model_type)
@@ -244,7 +258,54 @@ def train_and_evaluate(train_df, val_df, test_df):
         )
         trained[model_type] = trainer
 
-    return results, trained
+        # Logged for EVERY candidate, not just the eventual winner -- real
+        # model comparison (Phase 15A / FR-71 Phase 5) needs more than one
+        # run to compare against. Registration (a Model Registry version)
+        # happens later in main(), only for whichever model wins selection.
+        # Failure here (MLflow unreachable) must not fail training itself --
+        # the local artifact/metrics files this script produces are still
+        # useful on their own, same graceful-degradation stance every other
+        # optional dependency in this codebase already takes (Kafka
+        # producer warmup, LLM provider warmup, etc.).
+        try:
+            from app.mlops.mlflow_client import log_training_run
+
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_path = Path(tmp) / "spam_baseline.joblib"
+                ArtifactManager(artifact_dir=tmp).save_model(trainer.pipeline, "spam_baseline.joblib")
+                run_id = log_training_run(
+                    experiment_name="spam",
+                    model_filename="spam_baseline.joblib",
+                    local_artifact_path=tmp_path,
+                    params={
+                        "model_type": model_type,
+                        "class_weight": str(SPAM_CLASS_WEIGHT),
+                        "calibrated_threshold": round(threshold, 4),
+                        "train_size": len(train_df),
+                    },
+                    metrics={
+                        "accuracy_at_0.5": metrics["accuracy"],
+                        "precision_at_0.5": metrics["precision"],
+                        "recall_at_0.5": metrics["recall"],
+                        "f1_at_0.5": metrics["f1_score"],
+                        "roc_auc": metrics.get("roc_auc", 0.0),
+                        "recall_at_threshold": test_recall_at_threshold,
+                        "precision_at_threshold": test_precision_at_threshold,
+                    },
+                    tags={
+                        "project_module": "spam",
+                        "evidence_status": MODULE_EVIDENCE_STATUS["spam"].value,
+                        "git_commit": git_commit,
+                        "dataset_version": "spamassassin+enron_v1",
+                    },
+                )
+            mlflow_run_ids[model_type] = run_id
+            logger.info("mlflow_run_logged", extra={"model_type": model_type, "run_id": run_id})
+        except Exception as exc:  # noqa: BLE001 -- MLflow being unreachable must not fail training
+            mlflow_run_ids[model_type] = None
+            logger.warning("mlflow_logging_skipped: %s: %s", type(exc).__name__, exc)
+
+    return results, trained, mlflow_run_ids
 
 
 def main():
@@ -283,7 +344,7 @@ def main():
     train_df, val_df, test_df = split_dataset(df)
     run.log_step("split_dataset", {"train": len(train_df), "val": len(val_df), "test": len(test_df)})
 
-    results, trained = train_and_evaluate(train_df, val_df, test_df)
+    results, trained, mlflow_run_ids = train_and_evaluate(train_df, val_df, test_df)
     run.log_step("train_and_evaluate", {"models_compared": [r["model"] for r in results]})
 
     comparison = pd.DataFrame(results).sort_values(
@@ -336,54 +397,76 @@ def main():
     # Version string identifies *this specific training run's* artifact — not a
     # semantic "v1/v2" (that implies deliberate release management we don't have
     # yet), just enough to answer "which run produced the model currently
-    # serving traffic" when someone is debugging a regression. A real model
-    # registry (MLflow, per the PRD) replaces this string with a proper
-    # registry entry later without changing where callers read it from.
+    # serving traffic" when someone is debugging a regression.
     model_version = f"{best_model_type}-{datetime.now(UTC):%Y%m%d-%H%M%S}"
 
-    artifact_manager = ArtifactManager()
-
-    # Stable filename: this is the ONLY path SpamService ever loads from, so
-    # deploying a new model is "run training, restart the API" — no config
-    # change, no code change. Traceability comes from the versioned copy below
-    # and from `model_version` inside the metrics sidecar file.
-    artifact_manager.save_model(
-        trained[best_model_type].pipeline,
-        "spam_baseline.joblib",
-    )
-    run.log_output("artifacts/spam_baseline.joblib", record_count=len(train_df))
-
-    # Versioned copy for audit/rollback — every training run keeps its own
-    # artifact under artifacts/versions/, so "what did we serve on <date>" and
-    # "roll back to the previous model" are both just file operations.
+    # Phase 15A / FR-71 behavior change, stated plainly: training used to
+    # write directly to artifacts/spam_baseline.joblib (the live serving
+    # path) -- "run training, restart the API" was the entire deployment
+    # process. That is exactly the "candidate becomes production merely
+    # because training completed successfully" shortcut the promotion
+    # policy explicitly forbids (docs/model_promotion_policy.md). Training
+    # now ONLY produces a versioned candidate + an MLflow registration;
+    # nothing here touches the serving path. Deploying it is a separate,
+    # explicit step: scripts/mlops/promote_model.py.
     versioned_artifact_manager = ArtifactManager(artifact_dir="artifacts/versions")
-    versioned_artifact_manager.save_model(
+    versioned_path = versioned_artifact_manager.save_model(
         trained[best_model_type].pipeline,
         f"spam_{model_version}.joblib",
     )
+    run.log_output(str(versioned_path), record_count=len(train_df))
 
-    artifact_manager.save_json(
-        {
-            "comparison": results,
-            "best_model": best_model_type,
-            "model_version": model_version,
-            "decision_threshold": float(best_row["calibrated_threshold"]),
-            "recall_target": RECALL_TARGET,
-            "meets_target": meets_target,
-            "train_size": len(train_df),
-            "val_size": len(val_df),
-            "test_size": len(test_df),
-        },
-        "spam_baseline_metrics.json",
-    )
-    run.log_output("artifacts/spam_baseline_metrics.json", record_count=len(results))
+    candidate_metrics = {
+        "comparison": results,
+        "best_model": best_model_type,
+        "model_version": model_version,
+        "decision_threshold": float(best_row["calibrated_threshold"]),
+        "recall_target": RECALL_TARGET,
+        "meets_target": meets_target,
+        "train_size": len(train_df),
+        "val_size": len(val_df),
+        "test_size": len(test_df),
+    }
+    versioned_artifact_manager.save_json(candidate_metrics, f"spam_{model_version}_metrics.json")
+    run.log_output(f"artifacts/versions/spam_{model_version}_metrics.json", record_count=len(results))
 
     run_output_dir = Path("data/processed/spam_baseline_v1")
     run_output_dir.mkdir(parents=True, exist_ok=True)
     run.save(str(run_output_dir))
 
     print(f"\nModel version: {model_version}")
-    print(f"Versioned artifact: artifacts/versions/spam_{model_version}.joblib")
+    print(f"Versioned artifact: {versioned_path}")
+
+    winning_run_id = mlflow_run_ids.get(best_model_type)
+    if winning_run_id is None:
+        print(
+            "\n[WARN] MLflow was unreachable during training -- no candidate was "
+            "registered. The trained artifact above still exists locally, but "
+            "nothing was deployed and nothing can be promoted through "
+            "scripts/mlops/promote_model.py until it's registered. Re-run this "
+            "script once MLflow is reachable, or register the existing artifact "
+            "manually (see docs/model_lifecycle.md \"Registering An Existing "
+            "Artifact\")."
+        )
+    else:
+        from app.mlops.mlflow_client import register_candidate, tag_run
+
+        # model_version is only known now (computed after the comparison
+        # loop that logged this run) -- tagging it post-hoc onto the
+        # already-completed run is what lets promote_model.py recover an
+        # accurate model_version string even when no metrics.json artifact
+        # was logged alongside it (spam's per-candidate logging never logs
+        # one -- see train_and_evaluate()'s own log_training_run call).
+        tag_run(winning_run_id, "model_version", model_version)
+        candidate_version = register_candidate(run_id=winning_run_id, model_name=MLFLOW_MODEL_NAME)
+        print(
+            f"\n[OK] Registered as MLflow candidate: {MLFLOW_MODEL_NAME} version "
+            f"{candidate_version} (run_id={winning_run_id})"
+        )
+        print(
+            f"This is NOT deployed yet. To promote it to production:\n"
+            f"    python -m scripts.mlops.promote_model --module spam --version {candidate_version}"
+        )
 
 
 if __name__ == "__main__":

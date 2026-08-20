@@ -1,0 +1,36 @@
+# MLflow tracking server, separate from the application image on purpose --
+# mlflow's own dependency set (click, gunicorn, alembic's own internal
+# schema-migration usage for MLflow's tracking-store tables, etc.) has
+# nothing to do with what backend/app actually needs at request time, and
+# bundling them would bloat the application image for no runtime benefit
+# (same reasoning docker/Dockerfile's own multi-stage-build comment already
+# gives for keeping the builder toolchain out of the runtime image).
+#
+# psycopg2-binary is required explicitly: the official mlflow PyPI package
+# does not pull in a Postgres driver on its own, and this project's backend
+# store is Postgres (see docker-compose.yml's mlflow service -- a separate
+# `mlflow` database on the SAME Postgres instance the app already runs,
+# not a second database engine).
+FROM python:3.11-slim
+
+# Must match requirements-mlops.txt's client pin exactly -- a client/server
+# version mismatch is exactly what caused a real failure here (client
+# 3.15.1 calling /api/2.0/mlflow/logged-models/search, a 3.x-only endpoint
+# that a 2.19.0 server responds to with a 404), reproduced during Phase
+# 15A's real infrastructure testing, not a hypothetical concern.
+RUN pip install --no-cache-dir mlflow==3.15.1 psycopg2-binary==2.9.10
+
+EXPOSE 5000
+
+# Credentials come from environment variables at container start, never
+# baked into the image or hardcoded in this file (Phase 15A security
+# review -- see docs/mlflow_architecture.md "Security"). Shell form (not
+# exec-array form) is required here specifically so $MLFLOW_* expands;
+# exec-array CMD does not go through a shell and would pass the literal
+# string "$MLFLOW_BACKEND_STORE_URI" to mlflow instead of its value.
+CMD mlflow server \
+    --host 0.0.0.0 \
+    --port 5000 \
+    --backend-store-uri "$MLFLOW_BACKEND_STORE_URI" \
+    --default-artifact-root /mlflow/artifacts \
+    --serve-artifacts

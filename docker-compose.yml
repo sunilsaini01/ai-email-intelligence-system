@@ -41,6 +41,14 @@ services:
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Only runs on a genuinely fresh (empty) postgres_data volume --
+      # Postgres' own entrypoint convention, not something Compose
+      # controls. For a pre-existing volume (this project's dev Postgres
+      # has been running for days), the `mlflow` database has to be
+      # created once manually instead -- see docs/mlflow_architecture.md
+      # "Database Setup" for the exact command, and why that's a safe,
+      # additive, non-destructive operation.
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
 
     healthcheck:
       test:
@@ -106,6 +114,50 @@ services:
       - kafka_data:/var/lib/kafka/data
 
 
+  # MLflow tracking server + model registry (Phase 15A / FR-71).
+  #
+  # Backend store: a SEPARATE `mlflow` database on the same Postgres
+  # instance the app already runs -- not a second database engine, and
+  # explicitly not mixed with app migrations/tables (see
+  # docs/mlflow_architecture.md "Database Setup").
+  #
+  # Artifact store: a bind-mounted local volume, same pattern already used
+  # for postgres_data/kafka_data/./artifacts -- survives container
+  # restarts, no S3/MinIO needed at this project's scale.
+  #
+  # NOT queried by api/agents at request time -- see
+  # backend/app/mlops/registry.py. Training/promotion scripts talk to it;
+  # the serving path stays a local file read, zero network call per
+  # inference.
+  mlflow:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mlflow
+
+    container_name: email_ai_mlflow
+    restart: unless-stopped
+
+    environment:
+      MLFLOW_BACKEND_STORE_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/mlflow"
+
+    ports:
+      - "5001:5000"
+
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+
   # FastAPI
   api:
     build:
@@ -137,6 +189,12 @@ services:
 
       # Docker-internal Kafka address.
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+      # Not used on the request path (see backend/app/mlops/registry.py --
+      # serving stays a local file read). Present so `docker compose exec
+      # api python -m scripts.mlops.promote_model ...` can reach the
+      # registry without extra flags.
+      MLFLOW_TRACKING_URI: http://mlflow:5000
 
     # Email Intelligence API:
     #
@@ -191,6 +249,12 @@ services:
       # Docker-internal Kafka address.
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
+      # Not used on the request path (see backend/app/mlops/registry.py --
+      # serving stays a local file read). Present so `docker compose exec
+      # api python -m scripts.mlops.promote_model ...` can reach the
+      # registry without extra flags.
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -216,3 +280,4 @@ services:
 volumes:
   postgres_data:
   kafka_data:
+  mlflow_artifacts:

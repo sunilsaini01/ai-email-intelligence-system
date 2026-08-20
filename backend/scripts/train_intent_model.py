@@ -24,7 +24,9 @@ Produces:
     artifacts/versions/intent_{model_version}.joblib
 """
 
+import subprocess
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -33,6 +35,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.evaluation.model_evaluator import evaluate_multilabel_model
+from app.mlops.model_metadata import MODULE_EVIDENCE_STATUS
 from app.pipeline.intent_pipeline import IntentMLPipeline
 from app.pipeline.pipeline_config import PipelineConfig
 from app.preprocessing.email_preprocessor import CATEGORY_CONFIG, EmailPreprocessor
@@ -41,6 +44,16 @@ from app.training.logger import get_logger
 from app.training.trainer import Trainer
 
 logger = get_logger()
+
+MLFLOW_MODEL_NAME = "intent"
+
+
+def _git_commit() -> str:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:
+        return "unknown"
+
 
 DATA_DIR = Path("data/processed/intent_synthetic_v1")
 MODEL_TYPES = ["logistic_regression", "naive_bayes", "svm"]
@@ -155,38 +168,75 @@ def main():
 
     model_version = f"{best_model_type}-{datetime.now(UTC):%Y%m%d-%H%M%S}"
 
-    artifact_manager = ArtifactManager()
-    artifact_manager.save_model(trained[best_model_type].pipeline, "intent_baseline.joblib")
-
+    # Phase 15A / FR-71: training no longer writes directly to
+    # artifacts/intent_baseline.joblib (the serving path) -- same behavior
+    # change as train_spam_model.py / train_category_model.py. Only
+    # scripts/mlops/promote_model.py writes there now.
     versioned_artifact_manager = ArtifactManager(artifact_dir="artifacts/versions")
     versioned_artifact_manager.save_model(
         trained[best_model_type].pipeline, f"intent_{model_version}.joblib"
     )
 
-    artifact_manager.save_json(
-        {
-            "comparison": results,
-            "best_model": best_model_type,
-            "model_version": model_version,
-            "labels": list(trained[best_model_type].pipeline.classes_),
-            "f1_macro_target": f1_macro_target,
-            "meets_f1_macro_target": bool(best_result["f1_macro"] >= f1_macro_target),
-            "train_size": len(train_df),
-            "test_size": len(test_df),
-            "SYNTHETIC_DATA": True,
-            "PRD_COMPLIANT": False,
-            "warning": (
-                "Trained on data/processed/intent_synthetic_v1 (heuristic multi-label "
-                "tags, not human-annotated). These metrics validate the pipeline "
-                "mechanically; they are not evidence of real-world intent-detection "
-                "quality. See docs/data_audit_intent.md and docs/model_cards/intent.md."
-            ),
-        },
-        "intent_baseline_metrics.json",
-    )
+    candidate_metrics = {
+        "comparison": results,
+        "best_model": best_model_type,
+        "model_version": model_version,
+        "labels": list(trained[best_model_type].pipeline.classes_),
+        "f1_macro_target": f1_macro_target,
+        "meets_f1_macro_target": bool(best_result["f1_macro"] >= f1_macro_target),
+        "train_size": len(train_df),
+        "test_size": len(test_df),
+        "SYNTHETIC_DATA": True,
+        "PRD_COMPLIANT": False,
+        "warning": (
+            "Trained on data/processed/intent_synthetic_v1 (heuristic multi-label "
+            "tags, not human-annotated). These metrics validate the pipeline "
+            "mechanically; they are not evidence of real-world intent-detection "
+            "quality. See docs/data_audit_intent.md and docs/model_cards/intent.md."
+        ),
+    }
+    versioned_artifact_manager.save_json(candidate_metrics, f"intent_{model_version}_metrics.json")
 
     print(f"\nModel version: {model_version}")
     print(f"Versioned artifact: artifacts/versions/intent_{model_version}.joblib")
+
+    try:
+        from app.mlops.mlflow_client import log_training_run, register_candidate
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp) / "intent_baseline.joblib"
+            ArtifactManager(artifact_dir=tmp).save_model(trained[best_model_type].pipeline, "intent_baseline.joblib")
+            run_id = log_training_run(
+                experiment_name="intent",
+                model_filename="intent_baseline.joblib",
+                local_artifact_path=tmp_path,
+                params={"model_type": best_model_type, "train_size": len(train_df)},
+                metrics={
+                    "f1_micro": best_result["f1_micro"],
+                    "f1_macro": best_result["f1_macro"],
+                    "f1_weighted": best_result["f1_weighted"],
+                    "hamming_loss": best_result["hamming_loss"],
+                    "precision_micro": best_result["precision_micro"],
+                    "recall_micro": best_result["recall_micro"],
+                    "subset_accuracy": best_result["subset_accuracy"],
+                },
+                tags={
+                    "project_module": "intent",
+                    "evidence_status": MODULE_EVIDENCE_STATUS["intent"].value,
+                    "git_commit": _git_commit(),
+                    "dataset_version": "intent_synthetic_v1",
+                    "model_version": model_version,
+                },
+            )
+        candidate_version = register_candidate(run_id=run_id, model_name=MLFLOW_MODEL_NAME)
+        print(f"\n[OK] Registered as MLflow candidate: {MLFLOW_MODEL_NAME} version {candidate_version} (run_id={run_id})")
+        print(
+            f"This is NOT deployed yet. To promote it to production:\n"
+            f"    python -m scripts.mlops.promote_model --module intent --version {candidate_version}"
+        )
+    except Exception as exc:  # noqa: BLE001 -- MLflow being unreachable must not fail training
+        print(f"\n[WARN] MLflow logging/registration skipped ({type(exc).__name__}: {exc}). "
+              "Artifact was still saved locally under artifacts/versions/.")
 
 
 if __name__ == "__main__":

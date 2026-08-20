@@ -14,6 +14,9 @@ resources:
   - kafka/statefulset.yaml
   - kafka/service.yaml
   - artifacts-chroma-pvc.yaml
+  - mlflow/artifacts-pvc.yaml
+  - mlflow/deployment.yaml
+  - mlflow/service.yaml
   - api-deployment.yaml
   - api-service.yaml
   - agents-deployment.yaml

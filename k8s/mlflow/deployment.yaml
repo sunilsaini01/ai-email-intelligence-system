@@ -1,0 +1,89 @@
+# MLflow tracking server + model registry (Phase 15A / FR-71).
+#
+# Single replica, on purpose -- same reasoning as k8s/postgres and
+# k8s/kafka: this is a local-validation deployment, not a claim of HA
+# MLflow. Backend store is a `mlflow` database on the SAME postgres
+# StatefulSet the app already uses (see initContainer below), not a
+# second database engine.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: email-ai
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # avoid two MLflow processes racing to run backend-store schema migrations against the same database
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      initContainers:
+        # Creates the `mlflow` database if it doesn't exist yet -- the
+        # Kubernetes equivalent of docker/postgres-init/01-create-mlflow-db.sql,
+        # which only runs on a genuinely fresh Compose volume. Idempotent:
+        # safe to run on every Pod start, including restarts of an
+        # already-initialized cluster.
+        - name: ensure-mlflow-db
+          image: postgres:15-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432 -U "$POSTGRES_USER"; do sleep 2; done
+              psql -h postgres -U "$POSTGRES_USER" -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'mlflow'" | grep -q 1 || \
+                psql -h postgres -U "$POSTGRES_USER" -d postgres -c "CREATE DATABASE mlflow"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: email-ai-secrets
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: email-ai-secrets
+                  key: POSTGRES_PASSWORD
+      containers:
+        - name: mlflow
+          image: email-ai-mlflow:k8s
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          env:
+            - name: MLFLOW_BACKEND_STORE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: email-ai-secrets
+                  key: MLFLOW_BACKEND_STORE_URI
+          volumeMounts:
+            - name: mlflow-artifacts
+              mountPath: /mlflow/artifacts
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+      volumes:
+        - name: mlflow-artifacts
+          persistentVolumeClaim:
+            claimName: mlflow-artifacts

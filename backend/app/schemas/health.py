@@ -10,6 +10,8 @@ Why a separate schema even for something this simple:
 
 from pydantic import BaseModel
 
+from app.mlops.model_metadata import ModelProvenance
+
 
 class HealthResponse(BaseModel):
     status: str
@@ -20,3 +22,22 @@ class HealthResponse(BaseModel):
 class ReadinessResponse(BaseModel):
     status: str
     database: str
+
+
+class RegisteredModelVersion(BaseModel):
+    module: str
+    model_version: str | None
+    provenance: ModelProvenance | None
+
+
+class ComponentVersionResponse(BaseModel):
+    component_name: str
+    classification: str
+    version_identifier: str
+    evidence_status: str
+    notes: str
+
+
+class ModelVersionsResponse(BaseModel):
+    registered_models: list[RegisteredModelVersion]
+    other_components: list[ComponentVersionResponse]

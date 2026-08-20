@@ -51,13 +51,19 @@ def _is_finite_probability(value: object) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool) and 0.0 <= float(value) <= 1.0 and math.isfinite(float(value))
 
 
-def _check_spam() -> CheckResult:
-    from app.services.spam_service import get_spam_service
+def _check_spam(artifact_dir: str | None = None) -> CheckResult:
+    """artifact_dir=None checks whatever's currently deployed (the default
+    get_spam_service() singleton, CI's usage). A caller validating a
+    candidate model before promotion (scripts/mlops/promote_model.py)
+    passes the candidate's own directory instead -- same checks, same
+    pass/fail criteria, no duplicated logic between "is the deployed model
+    healthy" and "is this candidate safe to promote"."""
+    from app.services.spam_service import SpamService, get_spam_service
 
     start = time.perf_counter()
     errors = []
     try:
-        service = get_spam_service()
+        service = SpamService(artifact_dir=artifact_dir) if artifact_dir else get_spam_service()
         result = service.classify(SAMPLE_SUBJECT, SAMPLE_BODY)
         if not isinstance(result.get("is_spam"), bool):
             errors.append(f"is_spam is not bool: {result.get('is_spam')!r}")
@@ -71,13 +77,13 @@ def _check_spam() -> CheckResult:
     return CheckResult("spam", not errors, duration_ms, errors=errors)
 
 
-def _check_priority() -> CheckResult:
-    from app.services.priority_service import get_priority_service
+def _check_priority(artifact_dir: str | None = None) -> CheckResult:
+    from app.services.priority_service import PriorityService, get_priority_service
 
     start = time.perf_counter()
     errors = []
     try:
-        service = get_priority_service()
+        service = PriorityService(artifact_dir=artifact_dir) if artifact_dir else get_priority_service()
         result = service.classify(SAMPLE_SUBJECT, SAMPLE_BODY)
         if result.get("priority") not in PRIORITY_LABELS:
             errors.append(f"priority {result.get('priority')!r} not in {PRIORITY_LABELS}")
@@ -93,13 +99,13 @@ def _check_priority() -> CheckResult:
     return CheckResult("priority", not errors, duration_ms, errors=errors)
 
 
-def _check_category() -> CheckResult:
-    from app.services.category_service import get_category_service
+def _check_category(artifact_dir: str | None = None) -> CheckResult:
+    from app.services.category_service import CategoryService, get_category_service
 
     start = time.perf_counter()
     errors = []
     try:
-        service = get_category_service()
+        service = CategoryService(artifact_dir=artifact_dir) if artifact_dir else get_category_service()
         result = service.classify(SAMPLE_SUBJECT, SAMPLE_BODY)
         categories = result.get("categories")
         if not isinstance(categories, list):
@@ -136,13 +142,13 @@ def _check_sentiment() -> CheckResult:
     return CheckResult("sentiment", not errors, duration_ms, errors=errors)
 
 
-def _check_intent() -> CheckResult:
-    from app.services.intent_service import get_intent_service
+def _check_intent(artifact_dir: str | None = None) -> CheckResult:
+    from app.services.intent_service import IntentService, get_intent_service
 
     start = time.perf_counter()
     errors = []
     try:
-        service = get_intent_service()
+        service = IntentService(artifact_dir=artifact_dir) if artifact_dir else get_intent_service()
         result = service.analyze(SAMPLE_SUBJECT, SAMPLE_BODY)
         intents = result.get("intents")
         if not isinstance(intents, list):

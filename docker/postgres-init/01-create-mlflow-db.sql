@@ -1,0 +1,13 @@
+-- Runs once, only on a genuinely fresh (empty) postgres_data volume --
+-- Postgres' own docker-entrypoint-initdb.d convention, not something
+-- Compose controls. Creates a database SEPARATE from the application's
+-- own POSTGRES_DB (email_intelligence) for MLflow's tracking-store
+-- tables, so MLflow's internal schema/migrations never touch the
+-- application's schema and vice versa (see docs/mlflow_architecture.md
+-- "Database Setup").
+--
+-- For a pre-existing postgres_data volume (this project's dev Postgres
+-- had already been running for days when this was added), this script
+-- never runs automatically -- create the database once manually instead:
+--   docker exec -it email_ai_postgres psql -U postgres -c "CREATE DATABASE mlflow;"
+CREATE DATABASE mlflow;

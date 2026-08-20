@@ -1,0 +1,30 @@
+# Phase 15A (FR-71 -- MLflow model version tracking, comparison, rollback).
+#
+# Deliberately NOT in requirements.txt: the serving path (SpamService,
+# PriorityService, etc.) never imports mlflow -- it reads a local
+# artifacts/{module}_baseline_metrics.json file, same as before this phase
+# (see backend/app/mlops/model_metadata.py). Only training scripts
+# (backend/scripts/train_*.py) and the promotion CLI
+# (backend/scripts/mlops/promote_model.py) need the mlflow client, so it
+# stays out of the deployed Docker image entirely -- one less dependency
+# in the thing that actually serves production traffic, consistent with
+# docker/Dockerfile's own builder/runtime separation philosophy.
+#
+# Install alongside requirements.txt + requirements-dev.txt when running
+# training or promotion:
+#   pip install -r requirements.txt -r requirements-dev.txt -r requirements-mlops.txt
+#
+# Version note: mlflow==2.19.0 (the version current at the time this was
+# written) requires pyarrow<19, which conflicts with this project's
+# pyarrow==24.0.0 pin (needed by app/security/pii_anonymizer.py's
+# pd.read_parquet/to_parquet calls -- see requirements.txt's own comment).
+# mlflow==3.15.1 relaxed that constraint to pyarrow<26,>=4.0.0, which the
+# existing pin satisfies with zero downgrade -- verified in a clean venv
+# before pinning, same discipline as every other dependency in this repo.
+mlflow==3.15.1
+# MLflow's Postgres backend-store support needs a driver; the package
+# itself does not declare one as a hard dependency (same reason
+# asyncpg has to be listed explicitly in requirements.txt for the app's
+# own Postgres connection). This is the sync psycopg2, not asyncpg --
+# MLflow's tracking-store code is sync, not this project's async stack.
+psycopg2-binary==2.9.10
