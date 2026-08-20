@@ -1,0 +1,184 @@
+{
+    "comparison": [
+        {
+            "model": "logistic_regression",
+            "macro_f1": 0.4877,
+            "macro_precision": 0.4836,
+            "macro_recall": 0.5137,
+            "accuracy": 0.6746,
+            "critical_high_f1": 0.2871,
+            "critical_high_recall": 0.3588,
+            "critical_high_precision": 0.2528,
+            "per_class_f1": {
+                "Low": 0.795,
+                "Medium": 0.5814,
+                "High": 0.4891,
+                "Critical": 0.0851
+            },
+            "per_class_recall": {
+                "Low": 0.8102,
+                "Medium": 0.527,
+                "High": 0.5357,
+                "Critical": 0.1818
+            },
+            "per_class_precision": {
+                "Low": 0.7803,
+                "Medium": 0.6484,
+                "High": 0.45,
+                "Critical": 0.0556
+            },
+            "confusion_matrix": [
+                [
+                    380,
+                    65,
+                    11,
+                    13
+                ],
+                [
+                    100,
+                    166,
+                    37,
+                    12
+                ],
+                [
+                    6,
+                    24,
+                    45,
+                    9
+                ],
+                [
+                    1,
+                    1,
+                    7,
+                    2
+                ]
+            ]
+        },
+        {
+            "model": "naive_bayes",
+            "macro_f1": 0.2954,
+            "macro_precision": 0.283,
+            "macro_recall": 0.3145,
+            "accuracy": 0.5973,
+            "critical_high_f1": 0.0,
+            "critical_high_recall": 0.0,
+            "critical_high_precision": 0.0,
+            "per_class_f1": {
+                "Low": 0.7313,
+                "Medium": 0.4501,
+                "High": 0.0,
+                "Critical": 0.0
+            },
+            "per_class_recall": {
+                "Low": 0.8358,
+                "Medium": 0.4222,
+                "High": 0.0,
+                "Critical": 0.0
+            },
+            "per_class_precision": {
+                "Low": 0.6501,
+                "Medium": 0.4819,
+                "High": 0.0,
+                "Critical": 0.0
+            },
+            "confusion_matrix": [
+                [
+                    392,
+                    77,
+                    0,
+                    0
+                ],
+                [
+                    182,
+                    133,
+                    0,
+                    0
+                ],
+                [
+                    26,
+                    58,
+                    0,
+                    0
+                ],
+                [
+                    3,
+                    8,
+                    0,
+                    0
+                ]
+            ]
+        },
+        {
+            "model": "svm",
+            "macro_f1": 0.3505,
+            "macro_precision": 0.4529,
+            "macro_recall": 0.3625,
+            "accuracy": 0.6769,
+            "critical_high_f1": 0.0333,
+            "critical_high_recall": 0.0179,
+            "critical_high_precision": 0.25,
+            "per_class_f1": {
+                "Low": 0.8102,
+                "Medium": 0.5252,
+                "High": 0.0667,
+                "Critical": 0.0
+            },
+            "per_class_recall": {
+                "Low": 0.951,
+                "Medium": 0.4635,
+                "High": 0.0357,
+                "Critical": 0.0
+            },
+            "per_class_precision": {
+                "Low": 0.7057,
+                "Medium": 0.6058,
+                "High": 0.5,
+                "Critical": 0.0
+            },
+            "confusion_matrix": [
+                [
+                    446,
+                    23,
+                    0,
+                    0
+                ],
+                [
+                    167,
+                    146,
+                    2,
+                    0
+                ],
+                [
+                    18,
+                    63,
+                    3,
+                    0
+                ],
+                [
+                    1,
+                    9,
+                    1,
+                    0
+                ]
+            ]
+        }
+    ],
+    "best_model": "logistic_regression",
+    "model_version": "logistic_regression-20260820-141649",
+    "labels": [
+        "Low",
+        "Medium",
+        "High",
+        "Critical"
+    ],
+    "macro_f1_target": 0.82,
+    "critical_high_f1_target": 0.85,
+    "meets_macro_target": false,
+    "meets_critical_high_target": false,
+    "train_size": 7000,
+    "val_size": 2121,
+    "test_size": 879,
+    "SYNTHETIC_DATA": true,
+    "PRD_COMPLIANT": false,
+    "warning": "Trained on data/processed/priority_synthetic_v1 (heuristic labels, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world priority classification quality. See docs/data_audit_priority.md and docs/model_cards/priority_classification.md."
+}

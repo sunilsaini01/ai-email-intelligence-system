@@ -35,7 +35,7 @@
         }
     ],
     "best_model": "svm",
-    "model_version": "svm-20260813-145106",
+    "model_version": "spam-mlflow-v1",
     "decision_threshold": 0.7,
     "recall_target": 0.95,
     "meets_target": true,
@@ -117,5 +117,17 @@
                 "enron_fpr": 0.0041
             }
         ]
+    },
+    "provenance": {
+        "mlflow_run_id": "d0251da7c4b54d2f998422c9ed7d366f",
+        "mlflow_model_name": "spam",
+        "mlflow_model_version": "1",
+        "mlflow_stage": "Production",
+        "git_commit": "32c136f5e2ad5d072ac2010b4ae6184dea6b4676",
+        "dataset_version": "spamassassin+enron_v1",
+        "evidence_status": "real_holdout",
+        "promoted_at": "2026-08-20T13:07:04.851896+00:00",
+        "promoted_by": "manual",
+        "rollback_of": "2"
     }
 }

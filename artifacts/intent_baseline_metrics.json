@@ -65,7 +65,7 @@
         }
     ],
     "best_model": "logistic_regression",
-    "model_version": "logistic_regression-20260808-211254",
+    "model_version": "logistic_regression-20260820-143043",
     "labels": [
         "Complaint",
         "Inquiry",
@@ -83,5 +83,17 @@
     "test_size": 879,
     "SYNTHETIC_DATA": true,
     "PRD_COMPLIANT": false,
-    "warning": "Trained on data/processed/intent_synthetic_v1 (heuristic multi-label tags, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world intent-detection quality. See docs/data_audit_intent.md and docs/model_cards/intent.md."
+    "warning": "Trained on data/processed/intent_synthetic_v1 (heuristic multi-label tags, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world intent-detection quality. See docs/data_audit_intent.md and docs/model_cards/intent.md.",
+    "provenance": {
+        "mlflow_run_id": "157ba1c3fbf3439483036d7213c1df4f",
+        "mlflow_model_name": "intent",
+        "mlflow_model_version": "1",
+        "mlflow_stage": "Production",
+        "git_commit": "32c136f5e2ad5d072ac2010b4ae6184dea6b4676",
+        "dataset_version": "intent_synthetic_v1",
+        "evidence_status": "synthetic_label",
+        "promoted_at": "2026-08-20T14:31:06.990793+00:00",
+        "promoted_by": "manual",
+        "rollback_of": null
+    }
 }

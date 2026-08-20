@@ -1,0 +1,83 @@
+{
+    "comparison": [
+        {
+            "model": "logistic_regression",
+            "f1_micro": 0.6829,
+            "f1_macro": 0.6553,
+            "f1_weighted": 0.6841,
+            "hamming_loss": 0.1497,
+            "precision_micro": 0.6454,
+            "recall_micro": 0.7251,
+            "subset_accuracy": 0.4187,
+            "per_label_f1": {
+                "Support": 0.7333,
+                "Sales": 0.4897,
+                "Billing": 0.5397,
+                "Legal": 0.7698,
+                "HR": 0.7107,
+                "IT": 0.6387,
+                "Marketing": 0.6721,
+                "General": 0.6881
+            }
+        },
+        {
+            "model": "naive_bayes",
+            "f1_micro": 0.4115,
+            "f1_macro": 0.3381,
+            "f1_weighted": 0.3839,
+            "hamming_loss": 0.2661,
+            "precision_micro": 0.405,
+            "recall_micro": 0.4182,
+            "subset_accuracy": 0.2218,
+            "per_label_f1": {
+                "Support": 0.5121,
+                "Sales": 0.2838,
+                "Billing": 0.2556,
+                "Legal": 0.4773,
+                "HR": 0.023,
+                "IT": 0.1972,
+                "Marketing": 0.4149,
+                "General": 0.5412
+            }
+        },
+        {
+            "model": "svm",
+            "f1_micro": 0.7023,
+            "f1_macro": 0.6768,
+            "f1_weighted": 0.6973,
+            "hamming_loss": 0.1132,
+            "precision_micro": 0.8459,
+            "recall_micro": 0.6004,
+            "subset_accuracy": 0.4528,
+            "per_label_f1": {
+                "Support": 0.7945,
+                "Sales": 0.506,
+                "Billing": 0.625,
+                "Legal": 0.7729,
+                "HR": 0.7106,
+                "IT": 0.703,
+                "Marketing": 0.6835,
+                "General": 0.6188
+            }
+        }
+    ],
+    "best_model": "svm",
+    "model_version": "svm-20260820-142333",
+    "labels": [
+        "Support",
+        "Sales",
+        "Billing",
+        "Legal",
+        "HR",
+        "IT",
+        "Marketing",
+        "General"
+    ],
+    "f1_micro_target": 0.8,
+    "meets_f1_micro_target": false,
+    "train_size": 7000,
+    "test_size": 879,
+    "SYNTHETIC_DATA": true,
+    "PRD_COMPLIANT": false,
+    "warning": "Trained on data/processed/category_synthetic_v1 (heuristic multi-label tags, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world categorization quality. See docs/data_audit_categorization.md and docs/model_cards/email_categorization.md."
+}

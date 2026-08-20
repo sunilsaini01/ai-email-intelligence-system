@@ -62,7 +62,7 @@
         }
     ],
     "best_model": "svm",
-    "model_version": "svm-20260808-161540",
+    "model_version": "svm-20260820-142333",
     "labels": [
         "Support",
         "Sales",
@@ -79,5 +79,17 @@
     "test_size": 879,
     "SYNTHETIC_DATA": true,
     "PRD_COMPLIANT": false,
-    "warning": "Trained on data/processed/category_synthetic_v1 (heuristic multi-label tags, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world categorization quality. See docs/data_audit_categorization.md and docs/model_cards/email_categorization.md."
+    "warning": "Trained on data/processed/category_synthetic_v1 (heuristic multi-label tags, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world categorization quality. See docs/data_audit_categorization.md and docs/model_cards/email_categorization.md.",
+    "provenance": {
+        "mlflow_run_id": "e5674f8c955949d6a1593a039a2fa181",
+        "mlflow_model_name": "category",
+        "mlflow_model_version": "1",
+        "mlflow_stage": "Production",
+        "git_commit": "32c136f5e2ad5d072ac2010b4ae6184dea6b4676",
+        "dataset_version": "category_synthetic_v1",
+        "evidence_status": "synthetic_label",
+        "promoted_at": "2026-08-20T14:24:08.369963+00:00",
+        "promoted_by": "manual",
+        "rollback_of": null
+    }
 }

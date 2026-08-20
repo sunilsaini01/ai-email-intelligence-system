@@ -164,7 +164,7 @@
         }
     ],
     "best_model": "logistic_regression",
-    "model_version": "logistic_regression-20260808-160846",
+    "model_version": "logistic_regression-20260820-141649",
     "labels": [
         "Low",
         "Medium",
@@ -180,5 +180,17 @@
     "test_size": 879,
     "SYNTHETIC_DATA": true,
     "PRD_COMPLIANT": false,
-    "warning": "Trained on data/processed/priority_synthetic_v1 (heuristic labels, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world priority classification quality. See docs/data_audit_priority.md and docs/model_cards/priority_classification.md."
+    "warning": "Trained on data/processed/priority_synthetic_v1 (heuristic labels, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world priority classification quality. See docs/data_audit_priority.md and docs/model_cards/priority_classification.md.",
+    "provenance": {
+        "mlflow_run_id": "affc20d3135e447db79744263b6752de",
+        "mlflow_model_name": "priority",
+        "mlflow_model_version": "1",
+        "mlflow_stage": "Production",
+        "git_commit": "32c136f5e2ad5d072ac2010b4ae6184dea6b4676",
+        "dataset_version": "priority_synthetic_v1",
+        "evidence_status": "synthetic_label",
+        "promoted_at": "2026-08-20T14:17:17.949479+00:00",
+        "promoted_by": "manual",
+        "rollback_of": null
+    }
 }

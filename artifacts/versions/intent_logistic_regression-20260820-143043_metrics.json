@@ -1,0 +1,87 @@
+{
+    "comparison": [
+        {
+            "model": "logistic_regression",
+            "f1_micro": 0.467,
+            "f1_macro": 0.3891,
+            "f1_weighted": 0.5088,
+            "hamming_loss": 0.1786,
+            "precision_micro": 0.3968,
+            "recall_micro": 0.5674,
+            "subset_accuracy": 0.2344,
+            "per_label_f1": {
+                "Complaint": 0.1421,
+                "Inquiry": 0.6201,
+                "Request": 0.5378,
+                "Feedback": 0.3765,
+                "Escalation": 0.0968,
+                "Order": 0.5637,
+                "Cancel": 0.4863,
+                "Refund": 0.0,
+                "Schedule": 0.6788
+            }
+        },
+        {
+            "model": "naive_bayes",
+            "f1_micro": 0.1538,
+            "f1_macro": 0.1117,
+            "f1_weighted": 0.1453,
+            "hamming_loss": 0.1335,
+            "precision_micro": 0.6115,
+            "recall_micro": 0.088,
+            "subset_accuracy": 0.3015,
+            "per_label_f1": {
+                "Complaint": 0.0,
+                "Inquiry": 0.2213,
+                "Request": 0.0432,
+                "Feedback": 0.0423,
+                "Escalation": 0.0,
+                "Order": 0.2289,
+                "Cancel": 0.3846,
+                "Refund": 0.0,
+                "Schedule": 0.0855
+            }
+        },
+        {
+            "model": "svm",
+            "f1_micro": 0.4943,
+            "f1_macro": 0.3335,
+            "f1_weighted": 0.4652,
+            "hamming_loss": 0.1011,
+            "precision_micro": 0.7963,
+            "recall_micro": 0.3584,
+            "subset_accuracy": 0.4073,
+            "per_label_f1": {
+                "Complaint": 0.0,
+                "Inquiry": 0.6304,
+                "Request": 0.3976,
+                "Feedback": 0.2941,
+                "Escalation": 0.0,
+                "Order": 0.5255,
+                "Cancel": 0.5091,
+                "Refund": 0.0,
+                "Schedule": 0.6448
+            }
+        }
+    ],
+    "best_model": "logistic_regression",
+    "model_version": "logistic_regression-20260820-143043",
+    "labels": [
+        "Complaint",
+        "Inquiry",
+        "Request",
+        "Feedback",
+        "Escalation",
+        "Order",
+        "Cancel",
+        "Refund",
+        "Schedule"
+    ],
+    "f1_macro_target": 0.8,
+    "meets_f1_macro_target": false,
+    "train_size": 7000,
+    "test_size": 879,
+    "SYNTHETIC_DATA": true,
+    "PRD_COMPLIANT": false,
+    "warning": "Trained on data/processed/intent_synthetic_v1 (heuristic multi-label tags, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world intent-detection quality. See docs/data_audit_intent.md and docs/model_cards/intent.md."
+}
