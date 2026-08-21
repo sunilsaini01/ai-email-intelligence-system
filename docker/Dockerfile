@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-# --- FIX 1: Install to an explicit destination target rather than a dynamic --user path ---
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# Install dependencies globally into the builder image (standard python paths)
+RUN pip install --no-cache-dir -r requirements.txt
 
 # app/preprocessing/text_helpers.py and email_preprocessor.py import
 # nltk.corpus.stopwords at module load time -- the corpus is data, not
@@ -37,8 +37,8 @@ RUN useradd --create-home --uid 1000 --shell /bin/bash appuser
 
 WORKDIR /app
 
-# --- FIX 2: Copy from the reliable custom prefix directory directly into python system paths ---
-COPY --from=builder /install /usr/local
+# Copy all installed python packages from the builder stage system paths
+COPY --from=builder /usr/local /usr/local
 COPY --from=builder /build/nltk_data /usr/local/share/nltk_data
 COPY ./app ./app
 
@@ -50,10 +50,10 @@ COPY ./app ./app
 COPY ./alembic.ini ./alembic.ini
 COPY ./alembic ./alembic
 
-# --- FIX 3: Simplify environments since libraries are now neatly in standard system lookup paths ---
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# Change ownership of /app to appuser so it can run the codebase safely
 RUN chown -R 1000:1000 /app
 USER appuser
 
