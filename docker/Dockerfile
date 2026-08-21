@@ -35,7 +35,12 @@ RUN useradd --create-home --shell /bin/bash appuser
 
 WORKDIR /app
 
-COPY --from=builder /root/.local /home/appuser/.local
+# --- FIX START ---
+# Explicitly create the target folder and set permissions so the copy works perfectly in CI
+RUN mkdir -p /home/appuser/.local && chown -R appuser:appuser /home/appuser
+COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
+# --- FIX END ---
+
 COPY --from=builder /build/nltk_data /usr/local/share/nltk_data
 COPY ./app ./app
 
