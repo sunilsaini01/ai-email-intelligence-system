@@ -244,39 +244,178 @@ jobs:
   k8s-validate:
     name: Kubernetes manifest validation
     runs-on: ubuntu-latest
-    # What this validates: every manifest under k8s/ is well-formed and
-    # accepted by a real Kubernetes API server (server-side dry-run --
-    # catches invalid fields, bad API versions, schema violations that a
-    # pure YAML lint would miss). What this does NOT validate: that Pods
-    # actually start, that images pull, that probes pass, that scaling or
-    # failure behavior works -- that requires a real running cluster with
-    # the real application image (~3GB with baked-in model artifacts),
-    # which is deliberately not built or pushed here. That evidence comes
-    # from a real local kind run instead -- see
-    # docs/evidence/kubernetes_failure_analysis.md and
-    # docs/architecture/kubernetes_runbook.md. This job would not have
-    # caught the Kafka publishNotReadyAddresses bug found during that real
-    # deploy (it's a runtime networking behavior, not a schema error) --
-    # stated here explicitly so this job's coverage isn't overclaimed.
+    # Phase 15B fix -- root cause of the prior failure:
+    # `kubectl apply --dry-run=server -f k8s/namespace.yaml` validates the
+    # Namespace against the API server but --dry-run=server never writes to
+    # etcd, so it never actually exists in the cluster. The next line
+    # (dry-running a namespaced resource against it) then failed with
+    # "namespaces \"email-ai\" not found" -- reproduced exactly as reported.
+    #
+    # Fixed by actually creating the namespace first (no dry-run), then
+    # both validating AND deploying the real stack against it. This job now
+    # proves the manifests are schema-valid (server-side dry-run of the
+    # complete kustomize-composed resource set) AND that the described
+    # deployment actually comes up: real Postgres/Kafka, a real migration
+    # run, real api/agents Pods, and a real end-to-end request through
+    # Kubernetes -> API -> Orchestrator -> Kafka -> Agents -> PostgreSQL --
+    # not just that individual files parse. This automates the exact,
+    # already hand-verified process in docs/architecture/kubernetes_runbook.md.
+    #
+    # MLflow (k8s/mlflow/*) is included in the dry-run validation below
+    # (it's part of k8s/kustomization.yaml) but deliberately NOT built or
+    # deployed live in this job -- its own image is unrelated to this fix
+    # and doubling image-build cost here isn't justified by the namespace
+    # bug this job exists to catch.
     steps:
       - uses: actions/checkout@v4
+
       - name: Create ephemeral kind cluster
         uses: helm/kind-action@v1
         with:
           cluster_name: ci-validate
-      - name: Server-side dry-run apply of every manifest
+
+      - name: Create the email-ai namespace (real apply, not dry-run)
         run: |
-          kubectl apply --dry-run=server -f k8s/namespace.yaml
-          kubectl apply --dry-run=server -n email-ai -f k8s/configmap.yaml
-          kubectl apply --dry-run=server -n email-ai -f k8s/secrets.example.yaml
-          kubectl apply --dry-run=server -n email-ai -f k8s/postgres/statefulset.yaml -f k8s/postgres/service.yaml
-          kubectl apply --dry-run=server -n email-ai -f k8s/kafka/statefulset.yaml -f k8s/kafka/service.yaml
-          kubectl apply --dry-run=server -n email-ai -f k8s/artifacts-chroma-pvc.yaml
-          kubectl apply --dry-run=server -n email-ai -f k8s/api-deployment.yaml -f k8s/api-service.yaml
-          kubectl apply --dry-run=server -n email-ai -f k8s/agents-deployment.yaml
-          kubectl apply --dry-run=server -n email-ai -f k8s/migration-job.yaml
+          kubectl apply -f k8s/namespace.yaml
+          kubectl get namespace email-ai
+
       - name: kustomize build sanity check
+        # Runs before server-side validation on purpose: rendering is the
+        # cheapest possible check and should fail first if broken, instead
+        # of running last and silently never executing when an earlier step
+        # fails (the exact way it went unexecuted before this fix).
         run: kubectl kustomize k8s/ > /dev/null
+
+      - name: Server-side dry-run of the complete manifest set
+        # Validates every resource kustomize composes together in one pass,
+        # now that the namespace genuinely exists -- catches schema errors
+        # and unresolvable references (ConfigMap/Secret keys, Service
+        # names) across the full set, rather than dry-running individual
+        # files in an arbitrary order.
+        run: kubectl apply --dry-run=server -k k8s/
+
+      - name: Build application image (base)
+        # Same commands docs/architecture/kubernetes_runbook.md already
+        # documents and hand-verifies. Plain `docker build`, not buildx --
+        # docker/Dockerfile.k8s's FROM email-ai-api:base needs to resolve
+        # against the local daemon's image store, which buildx's isolated
+        # builder does not share by default.
+        run: docker build -f docker/Dockerfile -t email-ai-api:base ./backend
+
+      - name: Build application image (Kubernetes layer -- bakes in artifacts/)
+        run: docker build -f docker/Dockerfile.k8s -t email-ai-api:k8s .
+
+      - name: Load image into kind (no registry backs a kind cluster)
+        run: kind load docker-image email-ai-api:k8s --name ci-validate
+
+      - name: Deploy config and secrets
+        # k8s/secrets.example.yaml applied as-is -- placeholder values only,
+        # this cluster is destroyed at the end of the job and never reachable
+        # outside it (same template this job's own dry-run already used).
+        run: |
+          kubectl apply -n email-ai -f k8s/configmap.yaml
+          kubectl apply -n email-ai -f k8s/secrets.example.yaml
+
+      - name: Deploy stateful infrastructure (Postgres, Kafka, Chroma PVC)
+        run: |
+          kubectl apply -n email-ai -f k8s/postgres/statefulset.yaml -f k8s/postgres/service.yaml
+          kubectl apply -n email-ai -f k8s/kafka/statefulset.yaml -f k8s/kafka/service.yaml
+          kubectl apply -n email-ai -f k8s/artifacts-chroma-pvc.yaml
+          kubectl wait --for=condition=ready pod -l app=postgres -n email-ai --timeout=180s
+          kubectl wait --for=condition=ready pod -l app=kafka -n email-ai --timeout=180s
+
+      - name: Run database migrations
+        run: |
+          kubectl apply -n email-ai -f k8s/migration-job.yaml
+          kubectl wait --for=condition=complete job/db-migrate -n email-ai --timeout=180s
+
+      - name: Deploy api and agents
+        # api scaled to 1 replica for this job on purpose -- horizontal
+        # scaling already has real, dedicated evidence from Phase 14's local
+        # kind testing (docs/evidence/requirements_traceability_kubernetes.md);
+        # this job verifies the deployment pipeline itself on a
+        # resource-constrained shared CI runner, not scaling behavior.
+        run: |
+          kubectl apply -n email-ai -f k8s/api-deployment.yaml -f k8s/api-service.yaml
+          kubectl apply -n email-ai -f k8s/agents-deployment.yaml
+          kubectl scale deployment api -n email-ai --replicas=1
+          kubectl wait --for=condition=ready pod -l app=api -n email-ai --timeout=240s
+          kubectl wait --for=condition=ready pod -l app=agents -n email-ai --timeout=120s
+
+      - name: Verify health, readiness, and a real end-to-end request
+        # Reuses the exact in-cluster-client smoke-test mechanism
+        # docs/architecture/kubernetes_runbook.md already documents (not
+        # port-forward -- see that file's own note on why). Health/readiness
+        # prove the api Pod is genuinely serving with a live Postgres
+        # connection. POST /email/process + polling GET /workflows/{id}
+        # proves the full Kubernetes -> API -> Orchestrator -> Kafka ->
+        # Agents -> PostgreSQL chain using existing endpoints only -- no new
+        # application code.
+        run: |
+          kubectl run curl-client -n email-ai --image=curlimages/curl:8.10.1 --restart=Never -- sleep 300
+          kubectl wait --for=condition=ready pod/curl-client -n email-ai --timeout=60s
+
+          echo "--- liveness ---"
+          kubectl exec -n email-ai curl-client -- curl -sf http://api:8000/api/v1/health
+
+          echo "--- readiness (requires a live Postgres connection) ---"
+          kubectl exec -n email-ai curl-client -- curl -sf http://api:8000/api/v1/health/ready
+
+          echo "--- end-to-end: dispatch through Kafka/agents, poll to completion ---"
+          RESPONSE=$(kubectl exec -n email-ai curl-client -- curl -sf -X POST http://api:8000/api/v1/email/process \
+            -H "Content-Type: application/json" \
+            -d '{"subject":"CI smoke test","body":"This is an automated Kubernetes deployment smoke test."}')
+          echo "$RESPONSE"
+          JOB_ID=$(echo "$RESPONSE" | jq -r .job_id)
+          if [ -z "$JOB_ID" ] || [ "$JOB_ID" = "null" ]; then
+            echo "::error::No job_id returned from POST /email/process"
+            exit 1
+          fi
+
+          STATUS="PENDING"
+          for i in $(seq 1 30); do
+            STATUS=$(kubectl exec -n email-ai curl-client -- curl -sf "http://api:8000/api/v1/workflows/$JOB_ID" | jq -r .status)
+            echo "workflow $JOB_ID status: $STATUS (attempt $i)"
+            case "$STATUS" in
+              COMPLETED|PARTIAL) break ;;
+              FAILED) echo "::error::Workflow $JOB_ID failed"; exit 1 ;;
+            esac
+            sleep 3
+          done
+          if [ "$STATUS" != "COMPLETED" ] && [ "$STATUS" != "PARTIAL" ]; then
+            echo "::error::Workflow $JOB_ID did not reach a terminal status within timeout (last status: $STATUS)"
+            exit 1
+          fi
+
+          kubectl delete pod curl-client -n email-ai --wait=false
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        # `kubectl get -A` output never includes Secret VALUES (only
+        # metadata/names) -- logs are pulled from the app's own stdout only,
+        # which does not log Settings/env vars at startup (verified: no
+        # such logging call exists in app/main.py).
+        run: |
+          echo "--- pods ---"
+          kubectl get pods -A -o wide
+          echo "--- deployments ---"
+          kubectl get deployments -A
+          echo "--- statefulsets ---"
+          kubectl get statefulsets -A
+          echo "--- services ---"
+          kubectl get services -A
+          echo "--- events ---"
+          kubectl get events -A --sort-by=.lastTimestamp
+          echo "--- api logs ---"
+          kubectl logs -n email-ai deploy/api --tail=200 || true
+          echo "--- agents logs ---"
+          kubectl logs -n email-ai deploy/agents --tail=200 || true
+          echo "--- migration job logs ---"
+          kubectl logs -n email-ai job/db-migrate --tail=200 || true
+
+      - name: Delete ephemeral kind cluster
+        if: always()
+        run: kind delete cluster --name ci-validate
 
   secret-scan:
     name: Secret safety scan
