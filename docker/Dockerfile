@@ -31,15 +31,16 @@ FROM python:3.11-slim AS runtime
 #   Running as root inside a container means a container-escape vulnerability
 #   hands the attacker root on the host's container runtime. Non-root is a
 #   near-zero-cost mitigation.
-RUN useradd --create-home --shell /bin/bash appuser
+#
+# Force UID 1000 to cleanly map permissions across build environments.
+RUN useradd --create-home --uid 1000 --shell /bin/bash appuser
 
 WORKDIR /app
 
-# --- FIX START ---
-# Explicitly create the target folder and set permissions so the copy works perfectly in CI
-RUN mkdir -p /home/appuser/.local && chown -R appuser:appuser /home/appuser
-COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
-# --- FIX END ---
+# Ensure target directories exist and use raw numeric UIDs (1000:1000) 
+# to guarantee Docker's layer system doesn't hit text translation mismatches.
+RUN mkdir -p /home/appuser/.local && chown -R 1000:1000 /home/appuser
+COPY --from=builder --chown=1000:1000 /root/.local /home/appuser/.local
 
 COPY --from=builder /build/nltk_data /usr/local/share/nltk_data
 COPY ./app ./app
@@ -56,7 +57,7 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-RUN chown -R appuser:appuser /app
+RUN chown -R 1000:1000 /app
 USER appuser
 
 EXPOSE 8000
