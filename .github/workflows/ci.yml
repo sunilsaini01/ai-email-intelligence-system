@@ -317,11 +317,42 @@ jobs:
           kubectl apply -n email-ai -f k8s/secrets.example.yaml
 
       - name: Deploy stateful infrastructure (Postgres, Kafka, Chroma PVC)
+        # `kubectl wait -l <selector>` only watches resources that ALREADY
+        # exist at the moment it's invoked -- it does not wait for a
+        # resource to be CREATED. A StatefulSet's Pod is created
+        # asynchronously by its controller, not synchronously by `kubectl
+        # apply`, so waiting immediately after apply can race: if the Pod
+        # object doesn't exist yet, `kubectl wait` fails instantly with
+        # "no matching resources found" instead of retrying. Reproduced for
+        # real during this fix's own verification (postgres-0/kafka-0
+        # appeared ~3s after apply, well inside a human-imperceptible
+        # window but consistently enough to fail this exact way). The
+        # `until kubectl get pod ...` loop below is the fix: wait for the
+        # Pod object to exist first (bounded, 60s max), THEN hand off to
+        # `kubectl wait` for the actual readiness condition -- that
+        # `kubectl wait` call remains the real synchronization mechanism,
+        # this is only closing the gap kubectl itself doesn't cover.
         run: |
+          wait_for_pod_created() {
+            local selector="$1" timeout=60 elapsed=0
+            until kubectl get pod -n email-ai -l "$selector" 2>/dev/null | grep -q .; do
+              if [ "$elapsed" -ge "$timeout" ]; then
+                echo "::error::No pod matching -l $selector was created within ${timeout}s"
+                exit 1
+              fi
+              sleep 2
+              elapsed=$((elapsed + 2))
+            done
+          }
+
           kubectl apply -n email-ai -f k8s/postgres/statefulset.yaml -f k8s/postgres/service.yaml
           kubectl apply -n email-ai -f k8s/kafka/statefulset.yaml -f k8s/kafka/service.yaml
           kubectl apply -n email-ai -f k8s/artifacts-chroma-pvc.yaml
+
+          wait_for_pod_created "app=postgres"
           kubectl wait --for=condition=ready pod -l app=postgres -n email-ai --timeout=180s
+
+          wait_for_pod_created "app=kafka"
           kubectl wait --for=condition=ready pod -l app=kafka -n email-ai --timeout=180s
 
       - name: Run database migrations
@@ -336,10 +367,26 @@ jobs:
         # this job verifies the deployment pipeline itself on a
         # resource-constrained shared CI runner, not scaling behavior.
         run: |
+          wait_for_pod_created() {
+            local selector="$1" timeout=60 elapsed=0
+            until kubectl get pod -n email-ai -l "$selector" 2>/dev/null | grep -q .; do
+              if [ "$elapsed" -ge "$timeout" ]; then
+                echo "::error::No pod matching -l $selector was created within ${timeout}s"
+                exit 1
+              fi
+              sleep 2
+              elapsed=$((elapsed + 2))
+            done
+          }
+
           kubectl apply -n email-ai -f k8s/api-deployment.yaml -f k8s/api-service.yaml
           kubectl apply -n email-ai -f k8s/agents-deployment.yaml
           kubectl scale deployment api -n email-ai --replicas=1
+
+          wait_for_pod_created "app=api"
           kubectl wait --for=condition=ready pod -l app=api -n email-ai --timeout=240s
+
+          wait_for_pod_created "app=agents"
           kubectl wait --for=condition=ready pod -l app=agents -n email-ai --timeout=120s
 
       - name: Verify health, readiness, and a real end-to-end request
