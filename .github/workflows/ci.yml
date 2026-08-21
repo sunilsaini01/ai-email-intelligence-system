@@ -238,6 +238,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Free disk space
+        # Runner-image preinstalled toolchains (Android SDK, .NET, GHC, etc.)
+        # eat ~25-30GB of the runner's ~14GB free space budget for nothing
+        # this job needs -- removing them was the fix for "no space left on
+        # device" during the image layer copy below.
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          docker-images: false
       - name: Build application image
         run: docker build -f docker/Dockerfile -t email-ai-api:ci ./backend
 
@@ -268,6 +277,17 @@ jobs:
     # bug this job exists to catch.
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free disk space
+        # This job builds two images (base + k8s layer, which bakes in
+        # artifacts/) and loads them into a kind cluster on top of that --
+        # same "no space left on device" failure as docker-build, worse
+        # here since both images and the cluster's containerd store share
+        # the runner's disk.
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          docker-images: false
 
       - name: Create ephemeral kind cluster
         uses: helm/kind-action@v1
