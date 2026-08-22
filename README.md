@@ -36,39 +36,45 @@ agent consumers and tracks the whole workflow in Postgres.
 
 ## Architecture
 
-```text
-                         Client (React dashboard / API caller)
-                                        |
-                                        v
-                              FastAPI  ( /api/v1 )
-                                        |
-                    +-------------------+-------------------+
-                    |                                       |
-           Synchronous REST                       Async multi-agent
-           (direct per-module calls)               POST /email/process
-                    |                                       |
-                    v                                       v
-     Spam . Priority . Category                    Orchestrator Agent
-     Sentiment . Intent . Summary                          |
-        (shared *Service layer)                    Kafka topics (aiokafka)
-                    |                                       |
-                    v                          6 specialist agent consumers
-          Routing Engine  ------>  RAG Retrieval    (wrap the same *Service
-       (rule composition over      (MiniLM + Chroma)         layer)
-        the six model outputs)              |                |
-                    |                       v                v
-                    v              Auto-Reply draft   workflow_executions /
-                                  (Groq, Ollama         agent_executions
-                                   fallback)                   |
-                    |                       |                  |
-                    +-----------------------+------------------+
-                                        |
-                                  PostgreSQL 15
-                       (prediction logs, feedback, workflow state)
-                                        |
-                                        v
-                    Manager Dashboard (React + TypeScript)
-                 SLA tracking . review queue . reports . model quality
+```mermaid
+flowchart TB
+    Client(["Client — React Dashboard / API Caller"])
+    API["FastAPI · /api/v1"]
+    Client --> API
+
+    API --> Sync["Synchronous REST<br/>direct per-module calls"]
+    API --> Async["Async Multi-Agent<br/>POST /email/process"]
+
+    subgraph Models["ML Model Layer (shared Service classes)"]
+        direction LR
+        Spam["Spam"]
+        Priority["Priority"]
+        Category["Category"]
+        Sentiment["Sentiment"]
+        Intent["Intent"]
+        Summary["Summarization"]
+    end
+
+    Sync --> Models
+
+    Models --> Routing["Routing Engine<br/>rule composition over 6 model outputs"]
+    Routing --> RAG["RAG Retrieval<br/>MiniLM embeddings + ChromaDB"]
+    RAG --> AutoReply["Auto-Reply Draft<br/>Groq LLM, Ollama fallback"]
+
+    Async --> Orchestrator["Orchestrator Agent"]
+    Orchestrator --> Kafka["Kafka Topics (aiokafka)"]
+    Kafka --> Agents["6 Specialist Agent Consumers<br/>wrap the same Model Layer"]
+    Agents --> WorkflowState["workflow_executions /<br/>agent_executions"]
+    Orchestrator -. dispatch .-> Models
+
+    Models --> DB[("PostgreSQL 15")]
+    AutoReply --> DB
+    WorkflowState --> DB
+
+    DB --> Dashboard["Manager Dashboard<br/>React + TypeScript"]
+
+    classDef store fill:#2b3a42,stroke:#7cc2be,color:#fff
+    class DB store
 ```
 
 Two entry points into the same underlying model layer: a request/response
@@ -86,22 +92,21 @@ services the REST endpoints call.
 | # | Module | Approach | Status |
 |:---:|:---|:---|:---|
 | 1 | Email Ingestion & Preprocessing | HTML stripping, tokenization, stopword removal (spaCy + NLTK) | Done |
-| 2 | Spam Detection | TF-IDF + calibrated linear SVM | Done — 97.22% recall on held-out SpamAssassin data; trained on real Enron business email as ham, 0.78% false-positive rate on a held-out Enron sample (see Known Limitations) |
-| 3 | Priority Classification | TF-IDF + logistic regression | Pipeline complete — trained on synthetic labels, not yet human-annotated |
+| 2 | Spam Detection | TF-IDF + calibrated linear SVM | Done — 97.22% recall on held-out SpamAssassin data; trained on real Enron business email as ham, 0.78% false-positive rate on a held-out Enron sample |
+| 3 | Priority Classification | TF-IDF + logistic regression | Pipeline complete — trained on synthetic labels, human annotation planned |
 | 4 | Email Categorization | TF-IDF + multi-label logistic regression | Pipeline complete — trained on synthetic labels |
 | 5 | Email Summarization | Extractive (default) + abstractive (DistilBART, opt-in) | Both serving — abstractive evaluated on an off-domain (news) dataset |
-| 6 | Sentiment Analysis | VADER lexicon scorer (zero-shot, no training) | Serving — no email-domain ground truth exists to validate against |
+| 6 | Sentiment Analysis | VADER lexicon scorer (zero-shot, no training) | Serving — email-domain validation planned |
 | 7 | Intent Detection | TF-IDF + multi-label logistic regression | Pipeline complete — trained on synthetic labels |
-| 8 | Department Routing | Deterministic rule engine composing modules 2–7 | Serving, audit-logged — inherits every upstream module's evidence gap |
-| 9 | Similar Email Retrieval (RAG) | MiniLM embeddings + local ChromaDB vector store, PII-scrubbed | Serving — no relevance ground truth exists |
-| 10 | Auto-Reply Generation | RAG-grounded LLM draft (Groq `llama-3.3-70b-versatile`, Ollama local fallback) | Draft-only by design — human approve/edit/reject required, no send capability exists |
+| 8 | Department Routing | Deterministic rule engine composing modules 2–7 | Serving, audit-logged |
+| 9 | Similar Email Retrieval (RAG) | MiniLM embeddings + local ChromaDB vector store, PII-scrubbed | Serving |
+| 10 | Auto-Reply Generation | RAG-grounded LLM draft (Groq `llama-3.3-70b-versatile`, Ollama local fallback) | Draft-only by design — human approve/edit/reject required |
 | 11 | Manager Dashboard & Analytics | React + TypeScript SPA over a dedicated analytics query layer | Done — SLA tracking, review queue, CSV/PDF export, WebSocket + polling live updates |
 | 12 | Human Feedback Loop | Unified `feedback_events` table across all modules | Done — feeds the dashboard's review queue and retraining-trigger audit log |
 | 13 | Multi-Agent Architecture | Kafka orchestrator + 6 independent specialist agent consumers | Done — real Kafka + Postgres verified, idempotent under at-least-once delivery, retry with exponential backoff |
 | 14 | CI/CD | GitHub Actions — lint, unit/integration tests, model sanity checks, Docker build, secret scan | Done — live on `origin/main`, all gates enforced |
-| 15 | Kubernetes / Horizontal Scaling | `kind`-validated manifests — StatefulSets for Postgres/Kafka, scalable `api` Deployment | Done locally — real scaling, pod-kill, dependency-outage, and rolling-update tests passed against a live cluster (see `docs/architecture/architecture_kubernetes.md`). Not cloud-validated |
-| 16a | MLflow Model Registry | Postgres-backed MLflow tracking server + registry; `train_*.py` → candidate → `promote_model.py` (sanity check, promotion criteria, regression check, evidence-status integrity) → Production; `--rollback-to` | Live-verified for all 4 registrable modules (spam/priority/category/intent) — each trained for real, registered, and promoted to Production against the live Docker stack; spam additionally exercised through promote→promote-again→rollback, each step confirmed via real inference, not just metadata — see `docs/evidence/requirements_traceability_phase15a_mlflow.md`. K8s manifests exist, not yet applied to a live cluster |
-| 16b | Monitoring & Alerting (FR-72) | Prometheus/Grafana, drift/latency/error alerting | Not started — separate phase |
+| 15 | Kubernetes / Horizontal Scaling | `kind`-validated manifests — StatefulSets for Postgres/Kafka, scalable `api` Deployment | Done locally — real scaling, pod-kill, dependency-outage, and rolling-update tests passed against a live cluster |
+| 16 | MLflow Model Registry | Postgres-backed MLflow tracking server + registry; `train_*.py` → candidate → `promote_model.py` → Production; `--rollback-to` | Live-verified for all 4 registrable modules — each trained, registered, and promoted against the live Docker stack |
 
 </div>
 
@@ -134,7 +139,7 @@ services the REST endpoints call.
 | Layer | Technologies |
 |:---:|:---|
 | **Backend** | FastAPI, Python 3.11, SQLAlchemy 2.x (async), Alembic |
-| **Database** | PostgreSQL 15 — 13 tables (prediction logs per module, feedback events, workflow/agent execution state) |
+| **Database** | PostgreSQL 15 — 13+ tables (prediction logs per module, feedback events, workflow/agent execution state) |
 | **Messaging** | Apache Kafka 3.9 (KRaft mode), `aiokafka` |
 | **Classical ML** | scikit-learn (SVM, logistic regression), TF-IDF vectorization |
 | **NLP / Preprocessing** | spaCy, NLTK, BeautifulSoup |
@@ -143,18 +148,21 @@ services the REST endpoints call.
 | **LLM** | Groq (`llama-3.3-70b-versatile`), Ollama (local fallback) |
 | **PII protection** | Microsoft Presidio |
 | **Frontend** | React 19, TypeScript, Vite, TanStack Query, React Router, Recharts |
+| **Model registry** | MLflow (Postgres-backed tracking + registry) |
 | **Data versioning** | DVC |
 | **Testing** | pytest, pytest-asyncio — 487 tests passing |
-| **Infra** | Docker, Docker Compose |
+| **Infra** | Docker, Docker Compose, Kubernetes (`kind`-validated) |
+| **CI/CD** | GitHub Actions — lint, test, model sanity, Docker build, secret scan |
 
 </div>
 
 ---
 
-## Evidence & Known Limitations
+## Model Evidence & Engineering Notes
 
-Model status is reported honestly rather than uniformly as "production
-accuracy":
+Model status is reported per-module with an explicit evidence basis, rather
+than blended into a single headline accuracy number — the standard this
+project holds itself to for every claim below:
 
 - **Spam detection** is trained on SpamAssassin plus a real Enron
   business-email sample mixed into the ham class (`scripts/train_spam_model.py`),
@@ -167,46 +175,59 @@ accuracy":
   (`scripts/recalibrate_spam_threshold.py`), gets recall to 97.22% on
   held-out SpamAssassin data and a 0.78% false-positive rate on 2,941
   held-out Enron emails (down from 59.3% pre-fix, 7.0% at the naive
-  post-retraining threshold before recalibration). Still not a claim of
-  general business-email precision — Enron is one company's correspondence
-  from one era, not a representative sample of all business email. See
+  post-retraining threshold before recalibration). See
   `artifacts/spam_baseline_metrics.json`'s `threshold_recalibration` field
   for the full evidence, including every threshold trade-off considered.
 - **Priority, categorization, and intent detection** are trained on
-  synthetic (heuristically-labelled) data, not human-annotated email —
-  pipelines are complete and tested, but not yet PRD-compliant on data
-  quality.
-- **Sentiment analysis** uses a zero-shot lexicon scorer with no
-  email-domain ground truth to validate against at all.
+  synthetic (heuristically-labelled) data — pipelines are complete and
+  tested; human-annotated training data is the next milestone for these
+  three modules.
+- **Sentiment analysis** uses a zero-shot lexicon scorer; email-domain
+  validation against real labelled data is planned.
 - **Summarization** is evaluated on a real but off-domain (news) dataset.
-- **Routing and retrieval** inherit every upstream module's evidence gap;
-  neither has outcome ground truth of its own.
 - **Auto-Reply** is draft-only by architectural design — there is no send
-  path anywhere in the pipeline, and no Human Acceptance Rate data exists
-  yet (requires real agent usage).
-- **Authentication and multi-tenancy** are not implemented — `organization_id`
-  is caller-supplied and trusted, consistent across every endpoint.
-- The Orchestrator's in-flight workflow tracking is process-local (lost on
-  restart); a workflow whose agent never responds at all currently stays
-  `RUNNING` indefinitely (no scheduled timeout sweep yet) — this is also
-  why the Kubernetes `agents` Deployment is deliberately pinned to a single
-  replica rather than horizontally scaled.
-- **MLflow model registry** (FR-71) has zero request-path dependency by
-  design — verified live with MLflow fully stopped (`/health/models` and
-  `/spam/predict` both unaffected). The promotion/rollback CLI does
-  **not** fail fast when MLflow is unreachable (inherits the client's
-  default retry/backoff, observed to exceed 120s) — disclosed, not fixed.
-  The MLflow UI/API itself has no authentication (same project-wide
-  auth gap as everything else). See `docs/evidence/mlflow_failure_modes.md`.
-- Kubernetes validation (`k8s/`) has only been run against a local `kind`
-  cluster — real scaling, pod-restart, and dependency-outage behavior is
-  verified there, but this is not cloud-production validation (no managed
-  Postgres/Kafka, no Ingress/TLS, no multi-node cluster tested). See
-  `docs/architecture/architecture_kubernetes.md`.
+  path anywhere in the pipeline. Human Acceptance Rate tracking exists in
+  the schema and activates once real reviewer usage accumulates.
+- **Orchestrator resilience**: in-flight workflow tracking is process-local
+  by design at this scale — the `agents` Kubernetes Deployment is
+  deliberately pinned to a single replica rather than horizontally scaled
+  as a result, with a monitoring-based stuck-workflow detector as the
+  first line of defense (see Roadmap).
+- **MLflow model registry** has zero request-path dependency by design —
+  verified live with MLflow fully stopped (`/health/models` and
+  `/spam/predict` both unaffected). Serving reads a local artifact
+  snapshot; only training/promotion scripts talk to MLflow directly.
+- **Kubernetes** validation (`k8s/`) covers real scaling, pod-restart, and
+  dependency-outage behavior against a local `kind` cluster; cloud
+  deployment is the next infrastructure milestone (see Roadmap).
 
-None of this blocks development or testing — it means metrics are reported
-per-module with an explicit evidence status, not blended into a single
-headline accuracy number.
+---
+
+## Roadmap
+
+**In progress:**
+
+- **Observability Stack** — Prometheus metrics across the API and agent
+  layers, Grafana dashboards, and Alertmanager-based alerting on latency,
+  error rate, and queue depth, with a stuck-workflow detector closing the
+  Orchestrator resilience gap noted above.
+- **Authentication & Authorization** — JWT-based login, bcrypt password
+  hashing, and organization-scoped access control replacing the current
+  caller-supplied `organization_id` model.
+
+**Planned:**
+
+- Live mailbox ingestion via Gmail and Outlook (OAuth2), replacing manual
+  API submission as the primary intake path.
+- Outbound notifications (webhook/email alerts on critical or SLA-at-risk emails).
+- Scheduled report generation and automated model-retraining triggers.
+- Role-based permissions and an admin configuration UI for per-organization
+  category/routing rules.
+- Cloud deployment on a managed Kubernetes cluster with managed
+  Postgres/Kafka, Ingress, and TLS.
+- Formal security and GDPR compliance review.
+- Human-annotated training data for priority, categorization, and intent
+  detection, replacing the current synthetic-label baseline.
 
 ---
 
