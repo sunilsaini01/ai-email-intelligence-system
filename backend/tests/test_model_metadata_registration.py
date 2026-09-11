@@ -27,6 +27,9 @@ EXPECTED_TABLES = {
     "retraining_triggers",
     "workflow_executions",
     "agent_executions",
+    "users",
+    "mailbox_connections",
+    "mailbox_ingested_messages",
 }
 
 
@@ -43,6 +46,8 @@ def test_models_dunder_all_matches_the_actual_registered_models():
         "EmailRecord",
         "FeedbackEvent",
         "IntentPredictionLog",
+        "MailboxConnection",
+        "MailboxIngestedMessage",
         "PriorityPredictionLog",
         "ReplyDraft",
         "RetrainingTrigger",
@@ -50,6 +55,7 @@ def test_models_dunder_all_matches_the_actual_registered_models():
         "SentimentPredictionLog",
         "SpamPredictionLog",
         "SummaryLog",
+        "User",
         "WorkflowExecution",
     }
     assert set(app.models.__all__) == expected_names

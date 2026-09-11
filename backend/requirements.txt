@@ -135,3 +135,15 @@ email-validator==2.2.0
 # that process has no other HTTP server -- see k8s/agents-deployment.yaml).
 # See docs/architecture/architecture_monitoring.md.
 prometheus_client==0.21.1
+
+# Phase 18 (live mailbox ingestion) addition only:
+# cryptography's Fernet -- authenticated symmetric encryption for stored
+# Gmail/Outlook OAuth refresh tokens (app/core/token_encryption.py). No
+# existing dependency already provides this; bcrypt (above) is a one-way
+# hash, not reversible encryption, so it can't be reused for a credential
+# this project needs to decrypt and present back to Google/Microsoft.
+# Pinned to 46.0.4, not the latest release -- presidio-anonymizer (already
+# a dependency, Module 1's PII anonymization) requires cryptography>=46.0.4,<47.0.0;
+# a `pip install` failure found directly, same class of cross-file version
+# conflict requirements-dev.txt's own httpx comment already documents.
+cryptography==46.0.4

@@ -91,7 +91,7 @@ services the REST endpoints call.
 
 | # | Module | Approach | Status |
 |:---:|:---|:---|:---|
-| 1 | Email Ingestion & Preprocessing | HTML stripping, tokenization, stopword removal (spaCy + NLTK) | Done |
+| 1 | Email Ingestion & Preprocessing | HTML stripping, tokenization, stopword removal (spaCy + NLTK) + live Gmail/Outlook OAuth2 polling | Done — preprocessing done; live ingestion backend built and Docker-verified, real-account OAuth verification pending |
 | 2 | Spam Detection | TF-IDF + calibrated linear SVM | Done — 97.22% recall on held-out SpamAssassin data; trained on real Enron business email as ham, 0.78% false-positive rate on a held-out Enron sample |
 | 3 | Priority Classification | TF-IDF + logistic regression | Pipeline complete — trained on synthetic labels, human annotation planned |
 | 4 | Email Categorization | TF-IDF + multi-label logistic regression | Pipeline complete — trained on synthetic labels |
@@ -131,6 +131,7 @@ services the REST endpoints call.
 | **PII handling** | Microsoft Presidio (analyzer + anonymizer) | Applied before any embedding or third-party LLM call |
 | **Authentication** | JWT (HS256) access tokens, bcrypt password hashing (`passlib`) | Every business endpoint gated behind `Depends(get_current_user)`; `organization_id` derived from the token, no longer caller-supplied; dashboard SPA has its own login page |
 | **Observability** | Prometheus (`prometheus_client`) + Grafana + Alertmanager | HTTP/inference/workflow/Kafka metrics scraped from `/metrics` on both the `api` and `agents` processes; Grafana dashboard + alert rules for latency, error rate, and consumer lag |
+| **Mailbox ingestion** | Gmail API + Microsoft Graph, direct `httpx` OAuth2 clients | Background poller in `agents`; refresh tokens encrypted at rest (`cryptography`/Fernet); a dedup ledger makes a retried poll idempotent |
 
 ---
 
@@ -154,7 +155,7 @@ services the REST endpoints call.
 | **Data versioning** | DVC |
 | **Auth** | PyJWT, passlib[bcrypt] |
 | **Monitoring** | prometheus_client, Grafana, Alertmanager |
-| **Testing** | pytest, pytest-asyncio — 531 tests passing |
+| **Testing** | pytest, pytest-asyncio — 586 tests passing |
 | **Infra** | Docker, Docker Compose, Kubernetes (`kind`-validated) |
 | **CI/CD** | GitHub Actions — lint, test, model sanity, Docker build, secret scan |
 
@@ -220,11 +221,20 @@ project holds itself to for every claim below:
   `organization_id` from the authenticated user instead of a
   caller-supplied string. The React dashboard has its own login page and
   attaches the token to every request.
+- **Live Mailbox Ingestion** — OAuth2 connect flow for both Gmail (Gmail
+  API) and Outlook (Microsoft Graph), with a background poller
+  (`app/agents/runner.py`) feeding new mail into the same
+  `dispatch_email_for_processing` pipeline `POST /email/process` uses.
+  Polling, not push (Pub/Sub/webhooks need a public HTTPS endpoint this
+  deployment doesn't have); a dedup ledger makes a retried poll safe
+  against duplicate dispatch. Backend is unit-tested (mocked HTTP against
+  both providers' real API shapes) and verified live against the running
+  Docker stack — OAuth token exchange itself still needs a real Google
+  Cloud / Azure AD app to verify end-to-end. No dashboard UI yet for
+  connecting a mailbox (API-only for now).
 
 **Planned:**
 
-- Live mailbox ingestion via Gmail and Outlook (OAuth2), replacing manual
-  API submission as the primary intake path.
 - Outbound notifications (webhook/email alerts on critical or SLA-at-risk emails).
 - Scheduled report generation and automated model-retraining triggers.
 - Role-based **authorization** — the `users.role` column (`admin`/`member`)

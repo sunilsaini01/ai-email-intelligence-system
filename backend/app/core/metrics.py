@@ -123,6 +123,21 @@ KAFKA_MESSAGES_TOTAL = Counter(
     ["topic", "direction", "outcome"],  # direction: produced | consumed ; outcome: success | error
 )
 
+# ---------------------------------------------------------------------
+# Mailbox ingestion layer (Phase 18) -- the poller in app/agents/runner.py
+# ---------------------------------------------------------------------
+
+MAILBOX_MESSAGES_INGESTED_TOTAL = Counter(
+    "mailbox_messages_ingested_total",
+    "Inbound messages fetched from a connected mailbox and handed to the pipeline.",
+    ["provider", "outcome"],  # provider: gmail | outlook ; outcome: success | error | duplicate
+)
+
+MAILBOX_CONNECTIONS_ERRORED = Gauge(
+    "mailbox_connections_errored",
+    "Mailbox connections currently in an error state (token refresh or fetch failed) -- needs reconnecting.",
+)
+
 
 def start_metrics_server(port: int) -> None:
     """Starts prometheus_client's own background-thread HTTP server.

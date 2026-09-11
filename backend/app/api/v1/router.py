@@ -20,6 +20,15 @@ two routers that must stay reachable without a token -- health for
 liveness/readiness probes (see that router's own module docstring on
 why it must never gate on anything), auth because you cannot present a
 token to get a token.
+
+Phase 18 (live mailbox ingestion) adds a THIRD reason a router must stay
+outside `protected_router`: `mailbox.callback_router` is hit by the
+user's browser being redirected by Google/Microsoft, which never carries
+an Authorization header. `mailbox.router` (connect/list/disconnect) is a
+normal business router and stays under `protected_router` like everything
+else -- only the callback itself is the exception, and it authenticates
+via its own signed `state` parameter instead (see
+app/ingestion/oauth_state.py).
 """
 
 from fastapi import APIRouter, Depends
@@ -30,6 +39,7 @@ from app.api.v1.endpoints import (
     dashboard,
     health,
     intent,
+    mailbox,
     priority,
     reply,
     retrieval,
@@ -44,6 +54,7 @@ from app.core.auth_dependency import get_current_user
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
+api_router.include_router(mailbox.callback_router)
 
 protected_router = APIRouter(dependencies=[Depends(get_current_user)])
 protected_router.include_router(spam.router)
@@ -57,4 +68,5 @@ protected_router.include_router(retrieval.router)
 protected_router.include_router(reply.router)
 protected_router.include_router(dashboard.router)
 protected_router.include_router(workflows.router)
+protected_router.include_router(mailbox.router)
 api_router.include_router(protected_router)

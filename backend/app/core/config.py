@@ -182,6 +182,57 @@ class Settings(BaseSettings):
     STUCK_WORKFLOW_THRESHOLD_MINUTES: int = Field(default=10)
     STUCK_WORKFLOW_CHECK_INTERVAL_SECONDS: int = Field(default=60)
 
+    # --- Phase 18 (Live Mailbox Ingestion, FR-01/FR-02/FR-03) ---
+    # Used to build each provider's OAuth2 redirect_uri
+    # (f"{APP_BASE_URL}/api/{API_VERSION}/mailbox/{provider}/callback").
+    # Must exactly match the redirect URI registered with Google Cloud /
+    # Azure AD -- both providers reject a mismatch outright, so this has
+    # to be the URL Google/Microsoft can actually redirect the user's
+    # BROWSER back to, not the internal docker-compose service name (see
+    # docker-compose.yml's api port mapping, 8001 on the host -> 8000
+    # in-container).
+    APP_BASE_URL: str = Field(default="http://localhost:8001")
+
+    # Google Cloud Console -> APIs & Services -> Credentials -> OAuth
+    # client ID (type "Web application"), with the Gmail API enabled and
+    # the `gmail.readonly` scope added on the OAuth consent screen. Empty
+    # by default -- GmailProvider raises a clear "not configured" error
+    # at connect-request time rather than the poller silently never
+    # running, same fail-fast-not-silent stance as GroqProviderUnavailable.
+    GOOGLE_CLIENT_ID: str = Field(default="")
+    GOOGLE_CLIENT_SECRET: str = Field(default="")
+
+    # Azure Portal -> App registrations -> new registration -> client ID/
+    # secret, with the Microsoft Graph delegated permission `Mail.Read`
+    # (+ `offline_access` for a refresh token) granted. "common" allows
+    # both personal Microsoft accounts and any work/school tenant to
+    # connect -- see Microsoft's own v2.0 endpoint docs on tenant values;
+    # a specific tenant ID would restrict this to one organization only.
+    MICROSOFT_CLIENT_ID: str = Field(default="")
+    MICROSOFT_CLIENT_SECRET: str = Field(default="")
+    MICROSOFT_TENANT_ID: str = Field(default="common")
+
+    # Symmetric key mailbox refresh/access tokens are encrypted with at
+    # rest (app/core/token_encryption.py) -- separate from SECRET_KEY
+    # (which signs JWTs, a different trust boundary: SECRET_KEY leaking
+    # forges login sessions, this key leaking decrypts stored mailbox
+    # credentials) even though both currently need the same
+    # "CHANGE_ME_IN_PRODUCTION before any non-local use" operator action.
+    MAILBOX_TOKEN_ENCRYPTION_KEY: str = Field(default="CHANGE_ME_IN_PRODUCTION")
+
+    # Periodic poll, same reasoning as STUCK_WORKFLOW_CHECK_INTERVAL_SECONDS
+    # above: neither Gmail Pub/Sub push nor Graph webhook subscriptions are
+    # reachable from this project's current deployment (no public HTTPS
+    # endpoint -- see docs/architecture_mailbox_ingestion.md "Why Polling,
+    # Not Push"), so a background poll is the only mechanism that works
+    # against a local Docker Compose stack today.
+    MAILBOX_POLL_INTERVAL_SECONDS: int = Field(default=60)
+    # Safety cap per connection per poll cycle -- protects against one
+    # connection with a huge unread backlog (e.g. the very first sync)
+    # starving every other connection's poll turn and the rest of the
+    # agents process's event loop.
+    MAILBOX_MAX_MESSAGES_PER_POLL: int = Field(default=20)
+
 
 @lru_cache
 def get_settings() -> Settings:

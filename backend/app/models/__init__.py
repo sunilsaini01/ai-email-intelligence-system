@@ -20,6 +20,8 @@ from app.models.category_prediction_log import CategoryPredictionLog
 from app.models.email_record import EmailRecord
 from app.models.feedback_event import FeedbackEvent
 from app.models.intent_prediction_log import IntentPredictionLog
+from app.models.mailbox_connection import MailboxConnection
+from app.models.mailbox_ingested_message import MailboxIngestedMessage
 from app.models.priority_prediction_log import PriorityPredictionLog
 from app.models.reply_draft import ReplyDraft
 from app.models.retraining_trigger import RetrainingTrigger
@@ -27,6 +29,7 @@ from app.models.routing_decision_log import RoutingDecisionLog
 from app.models.sentiment_prediction_log import SentimentPredictionLog
 from app.models.spam_prediction_log import SpamPredictionLog
 from app.models.summary_log import SummaryLog
+from app.models.user import User
 from app.models.workflow_execution import WorkflowExecution
 
 __all__ = [
@@ -35,6 +38,8 @@ __all__ = [
     "EmailRecord",
     "FeedbackEvent",
     "IntentPredictionLog",
+    "MailboxConnection",
+    "MailboxIngestedMessage",
     "PriorityPredictionLog",
     "ReplyDraft",
     "RetrainingTrigger",
@@ -42,5 +47,6 @@ __all__ = [
     "SentimentPredictionLog",
     "SpamPredictionLog",
     "SummaryLog",
+    "User",
     "WorkflowExecution",
 ]

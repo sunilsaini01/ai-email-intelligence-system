@@ -13,7 +13,6 @@ reconstructed from Kafka -- see app/models/workflow_execution.py's module
 docstring.
 """
 
-import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,20 +22,16 @@ from app.core.auth_dependency import get_current_user
 from app.database.repositories.agent_execution_repository import AgentExecutionRepository
 from app.database.repositories.workflow_execution_repository import WorkflowExecutionRepository
 from app.database.session import get_db
-from app.messaging import topics
-from app.messaging.producer import publish_event
-from app.messaging.schemas import AgentEvent
 from app.models.user import User
-from app.models.workflow_execution import STATUS_FAILED
 from app.schemas.workflow import (
     AgentExecutionStatus,
     EmailProcessRequest,
     EmailProcessResponse,
     WorkflowStatusResponse,
 )
+from app.services.email_intake_service import EmailDispatchFailed, dispatch_email_for_processing
 
 router = APIRouter(tags=["Multi-Agent Workflows"])
-logger = logging.getLogger("app.workflows")
 
 
 @router.post("/email/process", response_model=EmailProcessResponse, status_code=202)
@@ -45,25 +40,17 @@ async def process_email(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> EmailProcessResponse:
-    repo = WorkflowExecutionRepository(db)
-    workflow = await repo.create(organization_id=current_user.organization_id)
-
-    event = AgentEvent(
-        job_id=workflow.id,
-        email_id=workflow.id,  # no canonical email_id yet -- see app/agents/orchestrator.py's _dispatch docstring
-        event_type=topics.TOPIC_EMAIL_PROCESSING_REQUESTED,
-        correlation_id=workflow.id,
-        payload={"subject": request.subject, "body": request.body, "sender_email": request.sender_email},
-        metadata={"organization_id": current_user.organization_id},
-    )
     try:
-        await publish_event(topics.TOPIC_EMAIL_PROCESSING_REQUESTED, event)
-    except Exception as e:
-        logger.error("email_process_dispatch_failed", exc_info=True, extra={"job_id": str(workflow.id)})
-        await repo.update_status(workflow, STATUS_FAILED, mark_completed=True)
+        workflow = await dispatch_email_for_processing(
+            db,
+            organization_id=current_user.organization_id,
+            subject=request.subject,
+            body=request.body,
+            sender_email=request.sender_email,
+        )
+    except EmailDispatchFailed as e:
         raise HTTPException(status_code=503, detail="Could not dispatch email for processing.") from e
 
-    logger.info("email_process_dispatched", extra={"job_id": str(workflow.id)})
     return EmailProcessResponse(job_id=workflow.id, status=workflow.status)
 
 
