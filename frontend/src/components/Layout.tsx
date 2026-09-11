@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { DateRangePicker } from "./DateRangePicker";
+import { useAuth } from "../hooks/useAuth";
 
 const NAV_ITEMS = [
   { to: "/", label: "Overview", end: true },
@@ -15,6 +16,8 @@ const NAV_ITEMS = [
 ];
 
 export function Layout() {
+  const { user, logout } = useAuth();
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -32,6 +35,14 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
+        <div className="sidebar__footer">
+          <span className="sidebar__user" title={user?.email}>
+            {user?.email}
+          </span>
+          <button type="button" className="preset-btn" onClick={logout}>
+            Sign out
+          </button>
+        </div>
       </aside>
       <main className="content">
         <DateRangePicker />

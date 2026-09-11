@@ -129,6 +129,8 @@ services the REST endpoints call.
 | **Feedback loop** | Unified `feedback_events` table | Replaces earlier write-only JSONL logging; feeds the dashboard's Human Review Queue |
 | **Frontend** | React 19 + TypeScript, Vite, TanStack Query, Recharts | Real-time dashboard: WebSocket updates with a 30s polling fallback |
 | **PII handling** | Microsoft Presidio (analyzer + anonymizer) | Applied before any embedding or third-party LLM call |
+| **Authentication** | JWT (HS256) access tokens, bcrypt password hashing (`passlib`) | Every business endpoint gated behind `Depends(get_current_user)`; `organization_id` derived from the token, no longer caller-supplied; dashboard SPA has its own login page |
+| **Observability** | Prometheus (`prometheus_client`) + Grafana + Alertmanager | HTTP/inference/workflow/Kafka metrics scraped from `/metrics` on both the `api` and `agents` processes; Grafana dashboard + alert rules for latency, error rate, and consumer lag |
 
 ---
 
@@ -150,7 +152,9 @@ services the REST endpoints call.
 | **Frontend** | React 19, TypeScript, Vite, TanStack Query, React Router, Recharts |
 | **Model registry** | MLflow (Postgres-backed tracking + registry) |
 | **Data versioning** | DVC |
-| **Testing** | pytest, pytest-asyncio — 487 tests passing |
+| **Auth** | PyJWT, passlib[bcrypt] |
+| **Monitoring** | prometheus_client, Grafana, Alertmanager |
+| **Testing** | pytest, pytest-asyncio — 531 tests passing |
 | **Infra** | Docker, Docker Compose, Kubernetes (`kind`-validated) |
 | **CI/CD** | GitHub Actions — lint, test, model sanity, Docker build, secret scan |
 
@@ -205,15 +209,17 @@ project holds itself to for every claim below:
 
 ## Roadmap
 
-**In progress:**
+**Recently completed:**
 
 - **Observability Stack** — Prometheus metrics across the API and agent
   layers, Grafana dashboards, and Alertmanager-based alerting on latency,
   error rate, and queue depth, with a stuck-workflow detector closing the
   Orchestrator resilience gap noted above.
-- **Authentication & Authorization** — JWT-based login, bcrypt password
-  hashing, and organization-scoped access control replacing the current
-  caller-supplied `organization_id` model.
+- **Authentication** — JWT-based login/registration, bcrypt password
+  hashing, and every business endpoint (API and dashboard) now deriving
+  `organization_id` from the authenticated user instead of a
+  caller-supplied string. The React dashboard has its own login page and
+  attaches the token to every request.
 
 **Planned:**
 
@@ -221,8 +227,10 @@ project holds itself to for every claim below:
   API submission as the primary intake path.
 - Outbound notifications (webhook/email alerts on critical or SLA-at-risk emails).
 - Scheduled report generation and automated model-retraining triggers.
-- Role-based permissions and an admin configuration UI for per-organization
-  category/routing rules.
+- Role-based **authorization** — the `users.role` column (`admin`/`member`)
+  exists and is issued on the token, but no endpoint yet distinguishes on
+  it; this is the next step beyond authentication, alongside an admin
+  configuration UI for per-organization category/routing rules.
 - Cloud deployment on a managed Kubernetes cluster with managed
   Postgres/Kafka, Ingress, and TLS.
 - Formal security and GDPR compliance review.

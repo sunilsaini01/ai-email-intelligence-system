@@ -9,8 +9,7 @@ const OPTIONS: { value: DateRangeName; label: string }[] = [
 ];
 
 export function DateRangePicker() {
-  const { range, setRangeName, setCustomRange, organizationId, setOrganizationId, reviewerId, setReviewerId } =
-    useDashboardFilters();
+  const { range, setRangeName, setCustomRange, reviewerId, setReviewerId } = useDashboardFilters();
 
   return (
     <div className="date-range-picker">
@@ -43,10 +42,6 @@ export function DateRangePicker() {
         </div>
       )}
 
-      <label className="filter-field">
-        Org
-        <input value={organizationId} onChange={(e) => setOrganizationId(e.target.value)} size={10} />
-      </label>
       <label className="filter-field">
         Reviewer
         <input

@@ -30,14 +30,55 @@ export class ApiError extends Error {
   }
 }
 
+// Phase 17 (real authentication): every business endpoint now requires a
+// Bearer token (see backend app/api/v1/router.py's protected_router). The
+// token lives in localStorage, not React state, so this module -- which
+// has no React dependency -- can read it on every request without a
+// circular import back to hooks/useAuth.tsx.
+const TOKEN_STORAGE_KEY = "eis_auth_token";
+
+export function getAuthToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAuthToken(token: string | null): void {
+  try {
+    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    // Storage disabled (private browsing, etc.) -- the session just
+    // won't survive a reload; not worth failing the request over.
+  }
+}
+
+// A 401 here means the token is missing, expired, or was revoked
+// server-side (e.g. is_active flipped false) -- broadcast it as a DOM
+// event rather than importing useAuth directly, so this file stays a
+// plain, React-free fetch wrapper. hooks/useAuth.tsx listens for this.
+export const AUTH_UNAUTHORIZED_EVENT = "eis:auth-unauthorized";
+
+function authHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
       ...(init?.headers ?? {}),
     },
   });
+
+  if (response.status === 401) {
+    window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+  }
 
   if (!response.ok) {
     let detail: unknown;
@@ -70,7 +111,10 @@ export function apiPost<T>(path: string, body: unknown): Promise<T> {
 
 export async function apiGetBlob(path: string, params?: Record<string, string>): Promise<Blob> {
   const query = params ? "?" + new URLSearchParams(params).toString() : "";
-  const response = await fetch(`${API_BASE_URL}${path}${query}`);
+  const response = await fetch(`${API_BASE_URL}${path}${query}`, { headers: authHeaders() });
+  if (response.status === 401) {
+    window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+  }
   if (!response.ok) {
     throw new ApiError(response.status, await response.text());
   }
