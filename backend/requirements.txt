@@ -110,3 +110,28 @@ reportlab==4.5.1
 # issues (torch, the transformers/pyarrow import-order crash worked around
 # in app/main.py) -- see docs/kafka_architecture.md "Client Library Decision".
 aiokafka==0.13.0
+
+# Phase 17 (real authentication) additions only:
+# passlib[bcrypt] -- bcrypt hashing, the standard FastAPI-recommended
+# choice; bcrypt ships prebuilt wheels for every platform this project
+# targets, no native build toolchain needed (same preference already
+# stated repeatedly above for aiokafka/asyncpg/pyarrow).
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+# PyJWT, not python-jose -- this project only ever needs HS256 (symmetric,
+# signed with the existing Settings.SECRET_KEY, no asymmetric keypair),
+# which PyJWT supports with zero extra crypto backend dependency.
+PyJWT==2.10.1
+# pydantic's EmailStr needs this optional dependency explicitly declared
+# -- pure Python, no native build step.
+email-validator==2.2.0
+
+# Phase 16B (monitoring & alerting, FR-72) additions only:
+# prometheus_client -- pure-Python, no native build dependency (matching
+# this project's repeated preference above), gives correct histogram/
+# rate/percentile math for free rather than hand-rolling it. Used by both
+# the api process (app.main mounts /metrics) and the agents process
+# (app.agents.runner starts its own metrics HTTP server on :9100, since
+# that process has no other HTTP server -- see k8s/agents-deployment.yaml).
+# See docs/architecture/architecture_monitoring.md.
+prometheus_client==0.21.1

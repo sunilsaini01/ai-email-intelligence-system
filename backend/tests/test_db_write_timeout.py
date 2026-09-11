@@ -22,6 +22,7 @@ from app.database.session import get_db
 from app.main import create_app
 from app.services.priority_service import get_priority_service
 from app.services.spam_service import get_spam_service
+from tests.conftest import override_auth
 
 
 class _HangingSession:
@@ -52,6 +53,7 @@ def hanging_db_client():
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
 
     # Warm both services up before timing anything, same reasoning.
     get_spam_service()

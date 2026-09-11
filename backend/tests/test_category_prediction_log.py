@@ -17,6 +17,7 @@ from app.database.session import Base, get_db
 from app.main import create_app
 from app.models.category_prediction_log import CategoryPredictionLog
 from app.services.category_service import _DEFAULT_ARTIFACT_DIR, get_category_service
+from tests.conftest import override_auth
 
 pytestmark = pytest.mark.skipif(
     not (Path(_DEFAULT_ARTIFACT_DIR) / "category_baseline.joblib").exists(),
@@ -48,6 +49,7 @@ def db_client(sqlite_session_factory):
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
 
     yield TestClient(app), sqlite_session_factory
 

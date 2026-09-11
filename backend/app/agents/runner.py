@@ -47,6 +47,9 @@ from app.agents.spam_agent import SpamAgent
 from app.agents.summarization_agent import SummarizationAgent
 from app.core.config import get_settings
 from app.core.logging import setup_logging
+from app.core.metrics import STUCK_WORKFLOWS, start_metrics_server
+from app.database.repositories.workflow_execution_repository import WorkflowExecutionRepository
+from app.database.session import AsyncSessionLocal
 from app.messaging import topics
 from app.messaging.consumer import build_consumer, consume_forever
 from app.messaging.producer import start_producer, stop_producer
@@ -86,13 +89,44 @@ async def _run_orchestrator() -> None:
     await consume_forever(consumer, orchestrator.handle_message)
 
 
+async def _run_stuck_workflow_check() -> None:
+    """Phase 16B / FR-72: periodic poll, not event-driven -- a stuck
+    workflow is defined by the ABSENCE of an event (nothing ever reports
+    to move it past RUNNING), so there is no event to react to. Detection
+    only, sets a Gauge; does not touch workflow state. See
+    WorkflowExecutionRepository.list_stale_running's docstring for why
+    recovery stays out of scope."""
+    settings = get_settings()
+    while True:
+        try:
+            async with AsyncSessionLocal() as session:
+                repo = WorkflowExecutionRepository(session)
+                stale = await repo.list_stale_running(settings.STUCK_WORKFLOW_THRESHOLD_MINUTES)
+            STUCK_WORKFLOWS.set(len(stale))
+            if stale:
+                logger.warning(
+                    "stuck_workflows_detected",
+                    extra={"count": len(stale), "job_ids": [str(w.id) for w in stale]},
+                )
+        except Exception:
+            # A failed check shouldn't crash the whole agents process --
+            # same graceful-degradation stance as every warmup step in
+            # app/main.py's lifespan.
+            logger.error("stuck_workflow_check_failed", exc_info=True)
+        await asyncio.sleep(settings.STUCK_WORKFLOW_CHECK_INTERVAL_SECONDS)
+
+
 async def main() -> None:
     setup_logging()
+    settings = get_settings()
+    start_metrics_server(settings.METRICS_PORT)
+    logger.info("metrics_server_started", extra={"port": settings.METRICS_PORT})
     await ensure_topics_exist()
     await start_producer()
 
     tasks = [asyncio.create_task(_run_specialist(cls)) for cls in SPECIALIST_AGENTS]
     tasks.append(asyncio.create_task(_run_orchestrator()))
+    tasks.append(asyncio.create_task(_run_stuck_workflow_check()))
 
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()

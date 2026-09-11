@@ -48,7 +48,10 @@ async def test_abstractive_warmup_runs_on_a_worker_thread_not_the_event_loop():
     try:
         from httpx import ASGITransport, AsyncClient
 
+        from tests.conftest import override_auth
+
         app = create_app()
+        override_auth(app)
         transport = ASGITransport(app=app)
 
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:

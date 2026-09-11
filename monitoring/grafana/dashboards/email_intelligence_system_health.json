@@ -1,0 +1,111 @@
+{
+  "title": "Email Intelligence - System Health (FR-72)",
+  "uid": "email-ai-system-health",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "tags": ["email-ai", "fr-72", "phase-16b"],
+  "panels": [
+    { "type": "row", "title": "System", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 1 },
+    {
+      "id": 2, "type": "timeseries", "title": "HTTP request rate by endpoint",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "targets": [{ "expr": "sum(rate(http_requests_total{path_template!=\"/metrics\"}[5m])) by (path_template)", "legendFormat": "{{path_template}}" }],
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "HTTP 5xx error rate (non-health)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "targets": [{ "expr": "sum(rate(http_requests_total{status_code=~\"5..\", path_template!~\"/api/v1/health.*\"}[5m])) / sum(rate(http_requests_total{path_template!~\"/api/v1/health.*\"}[5m]))", "legendFormat": "error rate" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.01 }] } }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "HTTP latency (p50 / p95)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, path_template))", "legendFormat": "p50 {{path_template}}" },
+        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, path_template))", "legendFormat": "p95 {{path_template}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+    {
+      "id": 5, "type": "stat", "title": "Service up",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "targets": [{ "expr": "up{job=~\"email-ai-.*\"}", "legendFormat": "{{job}}" }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }] }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+
+    { "type": "row", "title": "Kafka", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }, "id": 10 },
+    {
+      "id": 11, "type": "timeseries", "title": "Consumer group lag (queue depth proxy) - alert at 500",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "targets": [{ "expr": "kafka_consumergroup_lag", "legendFormat": "{{consumergroup}} / {{topic}}" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 500 }] } }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Kafka message throughput (produced / consumed)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "targets": [{ "expr": "sum(rate(kafka_messages_total[5m])) by (topic, direction, outcome)", "legendFormat": "{{topic}} {{direction}} {{outcome}}" }],
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+
+    { "type": "row", "title": "Agents & Workflows", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }, "id": 20 },
+    {
+      "id": 21, "type": "timeseries", "title": "Agent executions by outcome",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "targets": [{ "expr": "sum(rate(agent_execution_total[5m])) by (agent_name, status)", "legendFormat": "{{agent_name}} {{status}}" }],
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+    {
+      "id": 22, "type": "timeseries", "title": "Workflow latency (p50 / p95, PRD targets 4s / 8s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(email_workflow_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(email_workflow_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+    {
+      "id": 23, "type": "timeseries", "title": "Workflows by terminal status",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 35 },
+      "targets": [{ "expr": "sum(rate(email_workflow_total[5m])) by (status)", "legendFormat": "{{status}}" }],
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+    {
+      "id": 24, "type": "stat", "title": "Stuck workflows (RUNNING past threshold)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 35 },
+      "targets": [{ "expr": "workflow_stuck_total" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }] } }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+
+    { "type": "row", "title": "ML Inference & Feedback", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 }, "id": 30 },
+    {
+      "id": 31, "type": "timeseries", "title": "Inference latency by module (p95)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(email_inference_duration_seconds_bucket[5m])) by (le, module))", "legendFormat": "{{module}}" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+    {
+      "id": 32, "type": "timeseries", "title": "Inference volume by module and outcome",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+      "targets": [{ "expr": "sum(rate(email_inference_total[5m])) by (module, outcome)", "legendFormat": "{{module}} {{outcome}}" }],
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    },
+    {
+      "id": 33, "type": "timeseries", "title": "Feedback correction rate by module (quality PROXY, not accuracy - see data_status)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 52 },
+      "targets": [{ "expr": "sum(rate(feedback_correction_total[1h])) by (module, data_status)", "legendFormat": "{{module}} ({{data_status}})" }],
+      "description": "data_status=synthetic or none means this module has no trustworthy ground truth behind it -- do not read this as validated accuracy. See docs/evidence/data_audit_*.md.",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" }
+    }
+  ]
+}

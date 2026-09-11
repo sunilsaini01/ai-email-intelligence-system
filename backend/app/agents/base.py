@@ -27,6 +27,7 @@ import time
 import uuid
 
 from app.core.config import get_settings
+from app.core.metrics import AGENT_EXECUTIONS_TOTAL, INFERENCE_DURATION_SECONDS, INFERENCE_TOTAL
 from app.database.repositories.agent_execution_repository import AgentExecutionRepository
 from app.database.session import AsyncSessionLocal
 from app.messaging import topics
@@ -141,6 +142,15 @@ class BaseAgent(abc.ABC):
                     execution = await repo.mark_failed(
                         execution, error_type, last_error_message, duration_ms=duration_ms
                     )
+                    # Phase 16B / FR-72: only the TERMINAL outcome is
+                    # counted here, not every retry attempt -- a transient
+                    # failure that succeeds on retry 2 is not an error for
+                    # error-rate purposes, only one that exhausts all
+                    # retries (or is classified PERMANENT) is. See
+                    # docs/architecture/architecture_monitoring.md
+                    # "Error Rate Definition".
+                    INFERENCE_TOTAL.labels(module=self.agent_name, outcome="error").inc()
+                    AGENT_EXECUTIONS_TOTAL.labels(agent_name=self.agent_name, status="FAILED").inc()
                     return None, error_type, last_error_message
 
                 execution = await repo.mark_retrying(execution, last_error_message)
@@ -161,6 +171,11 @@ class BaseAgent(abc.ABC):
                     "agent_execution_completed",
                     extra={**log_extra, "duration_ms": duration_ms, "status": "COMPLETED"},
                 )
+                INFERENCE_DURATION_SECONDS.labels(
+                    module=self.agent_name, model_version=model_version or "unknown"
+                ).observe(duration_ms / 1000)
+                INFERENCE_TOTAL.labels(module=self.agent_name, outcome="success").inc()
+                AGENT_EXECUTIONS_TOTAL.labels(agent_name=self.agent_name, status="COMPLETED").inc()
                 return result, None, None
 
         # Unreachable given the loop above always returns, kept only as an

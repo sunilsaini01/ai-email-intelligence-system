@@ -1,0 +1,35 @@
+# Phase 16B / FR-72. Alertmanager's own config format does not support
+# ${ENV_VAR} substitution -- `api_url_file` (below) is Alertmanager's own
+# built-in mechanism for exactly this: the real webhook URL never appears
+# in this file, in docker-compose.yml, or in any k8s manifest. It's read
+# from monitoring/alertmanager/slack_webhook_url.txt, gitignored, same
+# copy-the-.example-and-fill-it-in convention as backend/.env vs
+# backend/.env.example.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: slack
+  group_by: ["alertname", "fr"]
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # INFO-severity alerts (the model-quality placeholder) get a longer
+    # repeat interval -- they're observability signals, not incidents.
+    - match:
+        severity: info
+      repeat_interval: 24h
+
+receivers:
+  - name: slack
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_webhook_url.txt
+        channel: "#email-ai-alerts"
+        send_resolved: true
+        title: '{{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})'
+        text: >-
+          {{ range .Alerts }}{{ .Annotations.summary }}
+          {{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+          {{ end }}

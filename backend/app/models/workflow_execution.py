@@ -19,7 +19,7 @@ produced a usable result -- see docs/failure_handling.md).
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, Float, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.session import Base
@@ -49,6 +49,16 @@ class WorkflowExecution(Base):
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Phase 16B / FR-72: end-to-end pipeline latency (pipeline_start =
+    # started_at, pipeline_end = completed_at). Stored explicitly rather
+    # than computed at read time so historical rows remain queryable/
+    # aggregable (p50/p95) without re-deriving from two timestamp columns
+    # on every read -- same rationale as processing_ms on the per-module
+    # prediction-log tables (spam/priority/category/intent/sentiment/
+    # summarization), which this mirrors at the workflow level. Set once,
+    # in WorkflowExecutionRepository.update_status(..., mark_completed=True).
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)

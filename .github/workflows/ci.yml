@@ -484,6 +484,63 @@ jobs:
         if: always()
         run: kind delete cluster --name ci-validate
 
+  monitoring-validate:
+    name: Monitoring config validation (Phase 16B / FR-72)
+    runs-on: ubuntu-latest
+    # Syntax-only, per this phase's own approved scope -- NOT a full
+    # stack smoke test (that would mean spinning up Prometheus/
+    # Alertmanager/Grafana/kafka-exporter alongside the rest of this
+    # job's already-heavy CI surface). Real end-to-end verification
+    # (an alert actually firing against real running infrastructure) is
+    # done locally -- see docs/phase_reports/PHASE_16B_REPORT.md "Real
+    # Verification" -- not automated in CI this phase. Remember the
+    # Phase 13 lesson this job's own name echoes: CI green here means
+    # the config is well-formed, not that the alert pipeline works.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: promtool check config
+        # --entrypoint promtool required -- the image's own ENTRYPOINT is
+        # already the prometheus binary itself, so `... prometheus:v2.55.1
+        # promtool ...` (no override) is parsed as an unexpected argument
+        # TO prometheus, not a request to run promtool. Mounted at
+        # /etc/prometheus specifically (not an arbitrary /config) because
+        # prometheus.yml's own `rule_files:` entry is the literal absolute
+        # path "/etc/prometheus/alert_rules.yml" -- promtool resolves that
+        # path for real, so it must actually exist there. Both found by
+        # this phase's own real-verification step (running this exact
+        # command locally before trusting it in CI), not assumed correct.
+        run: |
+          docker run --rm --entrypoint promtool \
+            -v "${{ github.workspace }}/monitoring/prometheus:/etc/prometheus" \
+            prom/prometheus:v2.55.1 check config /etc/prometheus/prometheus.yml
+
+      - name: promtool check rules
+        run: |
+          docker run --rm --entrypoint promtool \
+            -v "${{ github.workspace }}/monitoring/prometheus:/etc/prometheus" \
+            prom/prometheus:v2.55.1 check rules /etc/prometheus/alert_rules.yml
+
+      - name: amtool check-config (Alertmanager)
+        # Same --entrypoint requirement as promtool above. api_url_file
+        # points at a path that doesn't exist in this checkout (the real
+        # secret, gitignored) -- amtool validates the config's own
+        # schema/syntax, not that referenced files resolve, so this still
+        # catches a malformed route/receiver/matcher.
+        run: |
+          docker run --rm --entrypoint amtool \
+            -v "${{ github.workspace }}/monitoring/alertmanager:/config" \
+            prom/alertmanager:v0.28.1 check-config /config/alertmanager.yml
+
+      - name: docker compose config validation
+        run: docker compose config --quiet
+
+      - name: kustomize build sanity check (monitoring resources)
+        # Duplicates k8s-validate's own first step on purpose -- this job
+        # can fail fast on a monitoring-specific manifest error without
+        # waiting for that job's much heavier kind-cluster setup first.
+        run: kubectl kustomize k8s/ > /dev/null
+
   secret-scan:
     name: Secret safety scan
     runs-on: ubuntu-latest

@@ -44,6 +44,16 @@ spec:
           image: email-ai-api:k8s
           imagePullPolicy: IfNotPresent
           command: ["python", "-m", "app.agents.runner"]
+          # Phase 16B / FR-72: this process still has no request-serving
+          # HTTP server (see the liveness probe note below, unchanged) --
+          # this port is exclusively prometheus_client's metrics HTTP
+          # server (app.core.metrics.start_metrics_server), started
+          # alongside the consumer loop in app.agents.runner. Nothing else
+          # listens here; no Service routes traffic to it, Prometheus
+          # scrapes it directly via a static target (k8s/monitoring/).
+          ports:
+            - name: metrics
+              containerPort: 9100
           envFrom:
             - configMapRef:
                 name: email-ai-config

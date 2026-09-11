@@ -21,6 +21,7 @@ from app.models.reply_draft import DRAFT_STATUSES, POLICY_UNSAFE_CONTENT
 from app.retrieval.vector_store import InMemoryVectorStore
 from app.services.auto_reply_service import AutoReplyService, get_auto_reply_service
 from app.services.retrieval_service import RetrievalService, get_retrieval_service
+from tests.conftest import override_auth
 from tests.test_retrieval_service import _FakeEmbedder
 
 _APP_ROOT = Path(__file__).resolve().parents[1] / "app"
@@ -47,6 +48,7 @@ def _make_client(session_factory, llm_response="A safe draft reply."):
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
     app.dependency_overrides[get_retrieval_service] = lambda: retrieval_service
     app.dependency_overrides[get_auto_reply_service] = lambda: AutoReplyService(
         llm_provider=FakeLLMProvider(response_text=llm_response)

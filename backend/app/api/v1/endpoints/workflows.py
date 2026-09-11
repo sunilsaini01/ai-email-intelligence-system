@@ -19,12 +19,14 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_dependency import get_current_user
 from app.database.repositories.agent_execution_repository import AgentExecutionRepository
 from app.database.repositories.workflow_execution_repository import WorkflowExecutionRepository
 from app.database.session import get_db
 from app.messaging import topics
 from app.messaging.producer import publish_event
 from app.messaging.schemas import AgentEvent
+from app.models.user import User
 from app.models.workflow_execution import STATUS_FAILED
 from app.schemas.workflow import (
     AgentExecutionStatus,
@@ -40,10 +42,11 @@ logger = logging.getLogger("app.workflows")
 @router.post("/email/process", response_model=EmailProcessResponse, status_code=202)
 async def process_email(
     request: EmailProcessRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> EmailProcessResponse:
     repo = WorkflowExecutionRepository(db)
-    workflow = await repo.create(organization_id=request.organization_id)
+    workflow = await repo.create(organization_id=current_user.organization_id)
 
     event = AgentEvent(
         job_id=workflow.id,
@@ -51,7 +54,7 @@ async def process_email(
         event_type=topics.TOPIC_EMAIL_PROCESSING_REQUESTED,
         correlation_id=workflow.id,
         payload={"subject": request.subject, "body": request.body, "sender_email": request.sender_email},
-        metadata={"organization_id": request.organization_id},
+        metadata={"organization_id": current_user.organization_id},
     )
     try:
         await publish_event(topics.TOPIC_EMAIL_PROCESSING_REQUESTED, event)
@@ -67,11 +70,11 @@ async def process_email(
 @router.get("/workflows/{job_id}", response_model=WorkflowStatusResponse)
 async def get_workflow_status(
     job_id: uuid.UUID,
-    organization_id: str = "default",
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> WorkflowStatusResponse:
     workflow_repo = WorkflowExecutionRepository(db)
-    workflow = await workflow_repo.get_by_id(organization_id, job_id)
+    workflow = await workflow_repo.get_by_id(current_user.organization_id, job_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found.")
 

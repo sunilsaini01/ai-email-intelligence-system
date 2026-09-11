@@ -16,6 +16,7 @@ import logging
 from aiokafka import AIOKafkaProducer
 
 from app.core.config import get_settings
+from app.core.metrics import KAFKA_MESSAGES_TOTAL
 from app.messaging.schemas import AgentEvent, DeadLetterEnvelope
 
 logger = logging.getLogger("app.messaging.producer")
@@ -56,11 +57,16 @@ async def publish_event(topic: str, event: AgentEvent) -> None:
     guarantees every event about one email lands on the same partition,
     giving per-email ordering without needing a global order."""
     producer = get_producer()
-    await producer.send_and_wait(
-        topic,
-        value=event.to_kafka_value(),
-        key=str(event.email_id).encode("utf-8"),
-    )
+    try:
+        await producer.send_and_wait(
+            topic,
+            value=event.to_kafka_value(),
+            key=str(event.email_id).encode("utf-8"),
+        )
+    except Exception:
+        KAFKA_MESSAGES_TOTAL.labels(topic=topic, direction="produced", outcome="error").inc()
+        raise
+    KAFKA_MESSAGES_TOTAL.labels(topic=topic, direction="produced", outcome="success").inc()
 
 
 async def publish_dead_letter(topic: str, envelope: DeadLetterEnvelope) -> None:
@@ -68,8 +74,13 @@ async def publish_dead_letter(topic: str, envelope: DeadLetterEnvelope) -> None:
     entry on the same partition as the rest of its events, for an operator
     reading the log in order."""
     producer = get_producer()
-    await producer.send_and_wait(
-        topic,
-        value=envelope.to_kafka_value(),
-        key=str(envelope.original_event.email_id).encode("utf-8"),
-    )
+    try:
+        await producer.send_and_wait(
+            topic,
+            value=envelope.to_kafka_value(),
+            key=str(envelope.original_event.email_id).encode("utf-8"),
+        )
+    except Exception:
+        KAFKA_MESSAGES_TOTAL.labels(topic=topic, direction="produced", outcome="error").inc()
+        raise
+    KAFKA_MESSAGES_TOTAL.labels(topic=topic, direction="produced", outcome="success").inc()

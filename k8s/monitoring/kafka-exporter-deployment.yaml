@@ -1,0 +1,47 @@
+# Phase 16B / FR-72 -- see app/core/metrics.py's module docstring for why
+# consumer lag is this project's documented "queue depth" proxy. Targets
+# kafka-0.kafka, the same per-pod DNS name k8s/configmap.yaml's own
+# KAFKA_BOOTSTRAP_SERVERS already uses (kafka is a single-replica
+# StatefulSet, see k8s/kafka/statefulset.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-exporter
+  namespace: email-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-exporter
+  template:
+    metadata:
+      labels:
+        app: kafka-exporter
+    spec:
+      containers:
+        - name: kafka-exporter
+          image: danielqsj/kafka-exporter:v1.9.0
+          args:
+            - --kafka.server=kafka-0.kafka:29092
+          ports:
+            - containerPort: 9308
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-exporter
+  namespace: email-ai
+spec:
+  type: ClusterIP
+  selector:
+    app: kafka-exporter
+  ports:
+    - port: 9308
+      targetPort: 9308

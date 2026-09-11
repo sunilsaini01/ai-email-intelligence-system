@@ -16,6 +16,7 @@ from app.database.session import Base, get_db
 from app.main import create_app
 from app.models.sentiment_prediction_log import SentimentPredictionLog
 from app.services.sentiment_service import get_sentiment_service
+from tests.conftest import override_auth
 
 
 @pytest_asyncio.fixture
@@ -42,6 +43,7 @@ def db_client(sqlite_session_factory):
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
 
     yield TestClient(app), sqlite_session_factory
 

@@ -14,6 +14,7 @@ from app.database.session import Base, get_db
 from app.main import create_app
 from app.models.feedback_event import FeedbackEvent
 from app.models.priority_prediction_log import PriorityPredictionLog
+from tests.conftest import override_auth
 
 
 @pytest_asyncio.fixture
@@ -34,6 +35,7 @@ def client(session_factory):
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
     return TestClient(app)
 
 

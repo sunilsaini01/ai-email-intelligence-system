@@ -17,10 +17,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.database.session import Base, get_db
-from app.inference.tfidf_embedder import TfidfEmbedder, _DEFAULT_ARTIFACT_DIR
+from app.inference.tfidf_embedder import _DEFAULT_ARTIFACT_DIR, TfidfEmbedder
 from app.main import create_app
 from app.retrieval.chroma_vector_store import ChromaVectorStore
 from app.services.retrieval_service import RetrievalService, get_retrieval_service
+from tests.conftest import override_auth
 
 pytestmark = pytest.mark.skipif(
     not (Path(_DEFAULT_ARTIFACT_DIR) / "tfidf_embedder.joblib").exists(),
@@ -58,6 +59,7 @@ def retrieval_client(sqlite_session_factory, tmp_path):
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
     app.dependency_overrides[get_retrieval_service] = lambda: fake_service
 
     yield TestClient(app)

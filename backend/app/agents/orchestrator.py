@@ -62,6 +62,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from app.core.metrics import WORKFLOW_DURATION_SECONDS, WORKFLOW_TOTAL
 from app.database.repositories.email_repository import EmailRepository
 from app.database.repositories.workflow_execution_repository import WorkflowExecutionRepository
 from app.database.session import AsyncSessionLocal
@@ -302,7 +303,16 @@ class Orchestrator:
                     status = STATUS_COMPLETED
                 if record is not None:
                     workflow.email_id = record.id
-                await workflow_repo.update_status(workflow, status, mark_completed=True)
+                workflow = await workflow_repo.update_status(workflow, status, mark_completed=True)
+                # Phase 16B / FR-72: pipeline_start = workflow.started_at
+                # (set at POST /email/process), pipeline_end = right now --
+                # update_status() just computed and persisted the same
+                # value onto workflow.duration_ms, this reads it back
+                # rather than recomputing so the metric and the DB row can
+                # never drift from each other.
+                if workflow.duration_ms is not None:
+                    WORKFLOW_DURATION_SECONDS.observe(workflow.duration_ms / 1000)
+                WORKFLOW_TOTAL.labels(status=status).inc()
 
         logger.info(
             "orchestrator_workflow_finalized",

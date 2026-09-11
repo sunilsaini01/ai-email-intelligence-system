@@ -17,6 +17,7 @@ from app.database.session import Base, get_db
 from app.main import create_app
 from app.models.priority_prediction_log import PriorityPredictionLog
 from app.services.priority_service import _DEFAULT_ARTIFACT_DIR, get_priority_service
+from tests.conftest import override_auth
 
 pytestmark = pytest.mark.skipif(
     not (Path(_DEFAULT_ARTIFACT_DIR) / "priority_baseline.joblib").exists(),
@@ -48,6 +49,7 @@ def db_client(sqlite_session_factory):
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
 
     yield TestClient(app), sqlite_session_factory
 

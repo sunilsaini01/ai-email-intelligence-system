@@ -19,7 +19,28 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.metrics import FEEDBACK_CORRECTIONS_TOTAL
 from app.models.feedback_event import ACTION_CORRECTION, FeedbackEvent
+
+# Phase 16B / FR-72: NOT "is this correction event real" (every correction
+# event is real human input, by construction) -- this labels whether the
+# UNDERLYING MODEL being corrected has trustworthy ground truth behind its
+# own training, per each module's own disclosed data-audit doc
+# (docs/evidence/data_audit_*.md). Exists so a correction-rate metric for
+# priority/category/intent can never be silently graphed or alerted on as
+# if it meant the same thing as spam's -- see architecture_monitoring.md
+# "Never Report Synthetic Evidence as Real". Modules not listed here
+# (routing, retrieval, auto_reply) inherit "none": each is a decision/
+# generation layer with no ground truth of its own, per README's own
+# module table.
+_MODULE_DATA_STATUS = {
+    "spam": "real",
+    "priority": "synthetic",
+    "category": "synthetic",
+    "intent": "synthetic",
+    "sentiment": "none",
+    "summarization": "real",
+}
 
 
 class FeedbackEventRepository:
@@ -52,6 +73,10 @@ class FeedbackEventRepository:
         self.session.add(record)
         await self.session.commit()
         await self.session.refresh(record)
+        if action == ACTION_CORRECTION:
+            FEEDBACK_CORRECTIONS_TOTAL.labels(
+                module=module, data_status=_MODULE_DATA_STATUS.get(module, "none")
+            ).inc()
         return record
 
     async def count_corrections_since(self, module: str, since: datetime | None) -> int:

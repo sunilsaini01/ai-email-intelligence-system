@@ -2,6 +2,12 @@
 API contracts for the multi-agent workflow surface (Module 13 / Phase 12,
 FR-63). Additive: every pre-existing `*/predict` endpoint contract is
 unchanged (PRD section 17's explicit backward-compatibility requirement).
+
+`EmailProcessRequest` no longer accepts `organization_id` from the caller
+(Phase 17, real authentication) -- a caller-supplied value here would let
+any authenticated user read/write into an org they don't belong to, just
+by sending a different string. It's derived from the authenticated
+user's own token instead; see app/api/v1/endpoints/workflows.py.
 """
 
 import uuid
@@ -9,14 +15,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
-
 
 class EmailProcessRequest(BaseModel):
     subject: str = Field(default="", description="Raw email subject line.")
     body: str = Field(..., description="Raw email body.")
     sender_email: str = Field(default="")
-    organization_id: str = Field(default=DEFAULT_ORGANIZATION_ID)
 
 
 class EmailProcessResponse(BaseModel):

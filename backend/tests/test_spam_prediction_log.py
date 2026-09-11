@@ -23,6 +23,7 @@ from app.database.session import Base, get_db
 from app.main import create_app
 from app.models.spam_prediction_log import SpamPredictionLog
 from app.services.spam_service import _DEFAULT_ARTIFACT_DIR, get_spam_service
+from tests.conftest import override_auth
 
 pytestmark = pytest.mark.skipif(
     not (Path(_DEFAULT_ARTIFACT_DIR) / "spam_baseline.joblib").exists(),
@@ -54,6 +55,7 @@ def db_client(sqlite_session_factory):
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
 
     yield TestClient(app), sqlite_session_factory
 

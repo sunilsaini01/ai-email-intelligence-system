@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.database.session import Base, get_db
 from app.main import create_app
 from app.models.summary_log import SummaryLog
+from tests.conftest import override_auth
 
 
 def _long_body(word_count: int = 250) -> str:
@@ -42,6 +43,7 @@ def db_client(sqlite_session_factory):
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
 
     yield TestClient(app), sqlite_session_factory
 

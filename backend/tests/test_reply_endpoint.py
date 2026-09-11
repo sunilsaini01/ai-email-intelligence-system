@@ -27,6 +27,7 @@ from app.retrieval.resolution_status import OPEN, RESOLVED
 from app.retrieval.vector_store import InMemoryVectorStore
 from app.services.auto_reply_service import AutoReplyService, get_auto_reply_service
 from app.services.retrieval_service import RetrievalService, get_retrieval_service
+from tests.conftest import override_auth
 from tests.test_retrieval_service import _FakeEmbedder
 
 
@@ -72,6 +73,7 @@ def _make_client(session_factory, fake_retrieval_service, fake_llm_response="Her
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
     app.dependency_overrides[get_retrieval_service] = lambda: fake_retrieval_service
     app.dependency_overrides[get_auto_reply_service] = lambda: fake_auto_reply_service
 
@@ -145,6 +147,7 @@ def test_generate_records_llm_timeout_as_failed_draft(sqlite_session_factory, em
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
     app.dependency_overrides[get_retrieval_service] = lambda: empty_retrieval_service
     app.dependency_overrides[get_auto_reply_service] = lambda: AutoReplyService(llm_provider=FakeLLMProvider(raise_timeout=True))
     client = TestClient(app)
@@ -168,6 +171,7 @@ def test_generate_records_llm_provider_error_as_failed_draft(sqlite_session_fact
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
     app.dependency_overrides[get_retrieval_service] = lambda: empty_retrieval_service
     app.dependency_overrides[get_auto_reply_service] = lambda: AutoReplyService(llm_provider=FakeLLMProvider(raise_error=True))
     client = TestClient(app)

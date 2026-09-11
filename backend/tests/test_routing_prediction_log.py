@@ -15,6 +15,7 @@ from app.database.session import Base, get_db
 from app.main import create_app
 from app.models.routing_decision_log import RoutingDecisionLog
 from app.services.routing_service import RoutingService, get_routing_service
+from tests.conftest import override_auth
 from tests.test_routing_service import _category, _intent, _priority, _sentiment, _spam
 
 
@@ -54,6 +55,7 @@ def db_client(sqlite_session_factory):
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
+    override_auth(app)
     app.dependency_overrides[get_routing_service] = lambda: fake_routing_service
 
     yield TestClient(app), sqlite_session_factory

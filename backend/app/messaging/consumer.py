@@ -21,6 +21,7 @@ from collections.abc import Awaitable, Callable
 from aiokafka import AIOKafkaConsumer
 
 from app.core.config import get_settings
+from app.core.metrics import KAFKA_MESSAGES_TOTAL
 
 logger = logging.getLogger("app.messaging.consumer")
 
@@ -61,7 +62,17 @@ async def consume_forever(
                     exc_info=True,
                     extra={"topic": message.topic, "partition": message.partition, "offset": message.offset},
                 )
+                # Phase 16B / FR-72: this is the harness-level failure path
+                # (see this function's own docstring) -- a genuinely
+                # unexpected bug, not a normal agent-level retry/failure
+                # (those are counted separately in app/agents/base.py, via
+                # INFERENCE_TOTAL/AGENT_EXECUTIONS_TOTAL, at the terminal
+                # outcome only). Counting both here AND there would double-
+                # count every agent failure; this counter exists so a bug
+                # in the harness ITSELF (not the ML call) is still visible.
+                KAFKA_MESSAGES_TOTAL.labels(topic=message.topic, direction="consumed", outcome="error").inc()
             else:
                 await consumer.commit()
+                KAFKA_MESSAGES_TOTAL.labels(topic=message.topic, direction="consumed", outcome="success").inc()
     finally:
         await consumer.stop()

@@ -1,0 +1,154 @@
+# Phase 16B / FR-72 alert rules.
+#
+# Severity discipline (not everything CRITICAL, per this phase's own
+# design doc): WARNING = worth a human looking soon; CRITICAL = an FR-72-
+# named hard threshold breached, sustained, not a single blip.
+#
+# "Queue depth" = Kafka consumer group lag. Documented explicitly, not a
+# silent substitution -- see app/core/metrics.py's module docstring and
+# docs/architecture/architecture_monitoring.md "Queue Depth = Consumer Lag".
+#
+# Error-rate denominator choices are deliberate and per-layer, not
+# blended -- see docs/architecture/architecture_monitoring.md "Error Rate
+# Definition" for the full numerator/denominator table this mirrors.
+#
+# Model-quality alert (group `model_quality`) is INFO severity ONLY and
+# carries a placeholder threshold, same documented-default pattern as
+# Settings.SLA_CRITICAL_HOURS etc. in app/core/config.py -- there is no
+# validated production baseline to compare against yet (no real traffic
+# exists, per docs/model_cards/auto_reply.md and every synthetic-data
+# module's own data-audit doc). This alert exists so the mechanism is
+# proven to work end-to-end now, NOT as a claim that its threshold means
+# anything yet. See §10/§13 of this phase's own master prompt: no false
+# accuracy alerts for modules without trustworthy ground truth -- this
+# alert is scoped to spam ONLY, the one module with real evidence.
+
+groups:
+  - name: fr72_error_rate
+    rules:
+      - alert: APIErrorRateHigh
+        expr: |
+          (
+            sum(rate(http_requests_total{status_code=~"5..", path_template!~"/api/v1/health.*"}[5m]))
+            /
+            sum(rate(http_requests_total{path_template!~"/api/v1/health.*"}[5m]))
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          fr: "FR-72"
+        annotations:
+          summary: "API 5xx error rate above 1% over 5m"
+          description: >
+            HTTP 5xx responses (excluding /health*) exceeded 1% of total
+            requests, sustained for 5 minutes. Denominator: all non-health
+            HTTP requests. Numerator: 5xx responses only (4xx are caller
+            errors, not system errors -- excluded deliberately).
+
+      - alert: AgentExecutionErrorRateHigh
+        expr: |
+          (
+            sum(rate(agent_execution_total{status="FAILED"}[5m]))
+            /
+            sum(rate(agent_execution_total[5m]))
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          fr: "FR-72"
+        annotations:
+          summary: "Specialist-agent execution error rate above 1% over 5m"
+          description: >
+            agent_execution_total only counts TERMINAL outcomes (see
+            app/agents/base.py) -- a transient failure that succeeds on
+            retry is not counted here. This fires only when agents are
+            genuinely exhausting retries or hitting permanent errors.
+
+  - name: fr72_latency
+    rules:
+      - alert: WorkflowLatencyP50High
+        expr: |
+          histogram_quantile(0.50, sum(rate(email_workflow_duration_seconds_bucket[5m])) by (le)) > 4
+        for: 5m
+        labels:
+          severity: warning
+          fr: "FR-72"
+        annotations:
+          summary: "Workflow P50 latency above the PRD's 4s target"
+
+      - alert: WorkflowLatencyP95High
+        expr: |
+          histogram_quantile(0.95, sum(rate(email_workflow_duration_seconds_bucket[5m])) by (le)) > 8
+        for: 5m
+        labels:
+          severity: warning
+          fr: "FR-72"
+        annotations:
+          summary: "Workflow P95 latency above the PRD's 8s target"
+
+      - alert: WorkflowLatencyHardLimitBreached
+        # Any observation landing above the 15s bucket boundary over the
+        # window -- not a percentile, a literal "did this happen at all"
+        # check, matching the PRD's own wording ("hard limit").
+        expr: |
+          (
+            sum(rate(email_workflow_duration_seconds_count[5m]))
+            -
+            sum(rate(email_workflow_duration_seconds_bucket{le="15"}[5m]))
+          ) > 0
+        for: 1m
+        labels:
+          severity: critical
+          fr: "FR-72"
+        annotations:
+          summary: "A workflow exceeded the PRD's 15s hard latency limit"
+
+  - name: fr72_queue_depth
+    rules:
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumergroup_lag > 500
+        for: 5m
+        labels:
+          severity: warning
+          fr: "FR-72"
+        annotations:
+          summary: "Kafka consumer group lag above 500 (queue depth proxy)"
+
+      - alert: KafkaConsumerLagCritical
+        expr: kafka_consumergroup_lag > 500
+        for: 15m
+        labels:
+          severity: critical
+          fr: "FR-72"
+        annotations:
+          summary: "Kafka consumer group lag above 500, sustained 15m"
+
+  - name: fr72_stuck_workflows
+    rules:
+      - alert: StuckWorkflowsDetected
+        expr: workflow_stuck_total > 0
+        for: 1m
+        labels:
+          severity: warning
+          fr: "FR-72"
+        annotations:
+          summary: "One or more workflows stuck RUNNING past the stale threshold"
+          description: >
+            Detection only -- surfaces the Orchestrator's disclosed
+            process-local in-flight-tracking limitation
+            (app/agents/orchestrator.py). No auto-recovery exists; see the
+            monitoring runbook for the manual remediation steps.
+
+  - name: fr72_model_quality
+    rules:
+      - alert: SpamCorrectionRateElevated
+        # PLACEHOLDER threshold -- see this file's own header comment.
+        # 10 corrections/hour with no validated baseline to compare
+        # against; proves the mechanism, not a claimed SLA.
+        expr: increase(feedback_correction_total{module="spam", data_status="real"}[1h]) > 10
+        for: 5m
+        labels:
+          severity: info
+          fr: "FR-72"
+        annotations:
+          summary: "Spam correction volume elevated over the last hour (placeholder threshold, no validated baseline)"

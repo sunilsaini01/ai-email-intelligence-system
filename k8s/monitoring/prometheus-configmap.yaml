@@ -1,0 +1,162 @@
+# Mirrors monitoring/prometheus/{prometheus.yml,alert_rules.yml} with
+# in-cluster DNS targets instead of docker-compose service names -- same
+# env-specific-values-only duplication pattern k8s/configmap.yaml already
+# uses against backend/.env.example, not one shared templating layer. Keep
+# both files in sync by hand when scrape targets or alert rules change.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: email-ai
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    rule_files:
+      - /etc/prometheus/alert_rules.yml
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ["alertmanager:9093"]
+
+    scrape_configs:
+      - job_name: "email-ai-api"
+        static_configs:
+          - targets: ["api:8000"]
+            labels:
+              service: api
+
+      - job_name: "email-ai-agents"
+        static_configs:
+          - targets: ["agents-metrics:9100"]
+            labels:
+              service: agents
+
+      - job_name: "kafka-exporter"
+        static_configs:
+          - targets: ["kafka-exporter:9308"]
+
+      - job_name: "prometheus"
+        static_configs:
+          - targets: ["localhost:9090"]
+
+  alert_rules.yml: |
+    groups:
+      - name: fr72_error_rate
+        rules:
+          - alert: APIErrorRateHigh
+            expr: |
+              (
+                sum(rate(http_requests_total{status_code=~"5..", path_template!~"/api/v1/health.*"}[5m]))
+                /
+                sum(rate(http_requests_total{path_template!~"/api/v1/health.*"}[5m]))
+              ) > 0.01
+            for: 5m
+            labels:
+              severity: warning
+              fr: "FR-72"
+            annotations:
+              summary: "API 5xx error rate above 1% over 5m"
+              description: >
+                HTTP 5xx responses (excluding /health*) exceeded 1% of total
+                requests, sustained for 5 minutes. Denominator: all non-health
+                HTTP requests. Numerator: 5xx responses only (4xx are caller
+                errors, not system errors -- excluded deliberately).
+
+          - alert: AgentExecutionErrorRateHigh
+            expr: |
+              (
+                sum(rate(agent_execution_total{status="FAILED"}[5m]))
+                /
+                sum(rate(agent_execution_total[5m]))
+              ) > 0.01
+            for: 5m
+            labels:
+              severity: warning
+              fr: "FR-72"
+            annotations:
+              summary: "Specialist-agent execution error rate above 1% over 5m"
+              description: >
+                agent_execution_total only counts TERMINAL outcomes (see
+                app/agents/base.py) -- a transient failure that succeeds on
+                retry is not counted here. This fires only when agents are
+                genuinely exhausting retries or hitting permanent errors.
+
+      - name: fr72_latency
+        rules:
+          - alert: WorkflowLatencyP50High
+            expr: histogram_quantile(0.50, sum(rate(email_workflow_duration_seconds_bucket[5m])) by (le)) > 4
+            for: 5m
+            labels:
+              severity: warning
+              fr: "FR-72"
+            annotations:
+              summary: "Workflow P50 latency above the PRD's 4s target"
+
+          - alert: WorkflowLatencyP95High
+            expr: histogram_quantile(0.95, sum(rate(email_workflow_duration_seconds_bucket[5m])) by (le)) > 8
+            for: 5m
+            labels:
+              severity: warning
+              fr: "FR-72"
+            annotations:
+              summary: "Workflow P95 latency above the PRD's 8s target"
+
+          - alert: WorkflowLatencyHardLimitBreached
+            expr: |
+              (
+                sum(rate(email_workflow_duration_seconds_count[5m]))
+                -
+                sum(rate(email_workflow_duration_seconds_bucket{le="15"}[5m]))
+              ) > 0
+            for: 1m
+            labels:
+              severity: critical
+              fr: "FR-72"
+            annotations:
+              summary: "A workflow exceeded the PRD's 15s hard latency limit"
+
+      - name: fr72_queue_depth
+        rules:
+          - alert: KafkaConsumerLagHigh
+            expr: kafka_consumergroup_lag > 500
+            for: 5m
+            labels:
+              severity: warning
+              fr: "FR-72"
+            annotations:
+              summary: "Kafka consumer group lag above 500 (queue depth proxy)"
+
+          - alert: KafkaConsumerLagCritical
+            expr: kafka_consumergroup_lag > 500
+            for: 15m
+            labels:
+              severity: critical
+              fr: "FR-72"
+            annotations:
+              summary: "Kafka consumer group lag above 500, sustained 15m"
+
+      - name: fr72_stuck_workflows
+        rules:
+          - alert: StuckWorkflowsDetected
+            expr: workflow_stuck_total > 0
+            for: 1m
+            labels:
+              severity: warning
+              fr: "FR-72"
+            annotations:
+              summary: "One or more workflows stuck RUNNING past the stale threshold"
+
+      - name: fr72_model_quality
+        rules:
+          - alert: SpamCorrectionRateElevated
+            expr: increase(feedback_correction_total{module="spam", data_status="real"}[1h]) > 10
+            for: 5m
+            labels:
+              severity: info
+              fr: "FR-72"
+            annotations:
+              summary: "Spam correction volume elevated over the last hour (placeholder threshold, no validated baseline)"

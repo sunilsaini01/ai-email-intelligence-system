@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: email-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.28.1
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+          ports:
+            - containerPort: 9093
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+            # Secret volume: each key in the email-ai-secrets Secret
+            # becomes its own file under this mount -- SLACK_WEBHOOK_URL
+            # becomes /etc/alertmanager/secrets/SLACK_WEBHOOK_URL, matched
+            # by alertmanager-configmap.yaml's api_url_file path. The URL
+            # value itself never appears in this manifest.
+            - name: secrets
+              mountPath: /etc/alertmanager/secrets
+              readOnly: true
+            - name: data
+              mountPath: /alertmanager
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9093
+            periodSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: alertmanager-config
+        - name: secrets
+          secret:
+            secretName: email-ai-secrets
+            items:
+              - key: SLACK_WEBHOOK_URL
+                path: SLACK_WEBHOOK_URL
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: email-ai
+spec:
+  type: ClusterIP
+  selector:
+    app: alertmanager
+  ports:
+    - port: 9093
+      targetPort: 9093

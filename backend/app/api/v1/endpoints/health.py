@@ -20,6 +20,8 @@ instance killed and restarted simultaneously by the orchestrator — turning
 a DB blip into a full application outage.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +39,7 @@ from app.schemas.health import (
 )
 
 router = APIRouter(tags=["Health"])
+logger = logging.getLogger("app.health")
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -55,8 +58,8 @@ async def readiness_check(
     try:
         await db.execute(text("SELECT 1"))
         db_status = "connected"
-    except Exception as e:
-        print("DB ERROR:", e)
+    except Exception:
+        logger.error("readiness_db_check_failed", exc_info=True)
         db_status = "unreachable"
 
     # A load balancer / Kubernetes readinessProbe reads the HTTP status

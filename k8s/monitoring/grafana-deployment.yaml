@@ -1,0 +1,88 @@
+# Phase 16B / FR-72. ConfigMap contents for datasource/dashboard
+# provisioning and the dashboard JSON itself come from kustomize's
+# configMapGenerator in k8s/monitoring/kustomization.yaml (reading
+# monitoring/grafana/... directly) -- a deliberate, one-off deviation from
+# this repo's usual plain-`resources:`-only convention, specifically to
+# avoid hand-duplicating a large generated dashboard JSON blob into YAML
+# (the exact kind of copy-paste drift this phase's own instructions warn
+# against). Referenced below by their unhashed logical names; kustomize's
+# built-in name-reference fixup resolves them to the generated
+# name+hash automatically.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: email-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      securityContext:
+        fsGroup: 472 # grafana's own image UID/GID -- required for it to write to the mounted data volume
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.4.0
+          ports:
+            - containerPort: 3000
+          env:
+            # Local dev only -- same no-real-auth stance already disclosed
+            # project-wide, not a new gap this phase introduces.
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin"
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "false"
+          volumeMounts:
+            - name: provisioning-datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: provisioning-dashboards
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboard-system-health
+              mountPath: /var/lib/grafana/dashboards
+            - name: data
+              mountPath: /var/lib/grafana
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: provisioning-datasources
+          configMap:
+            name: grafana-provisioning-datasources
+        - name: provisioning-dashboards
+          configMap:
+            name: grafana-provisioning-dashboards
+        - name: dashboard-system-health
+          configMap:
+            name: grafana-dashboard-system-health
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: email-ai
+spec:
+  type: ClusterIP
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000

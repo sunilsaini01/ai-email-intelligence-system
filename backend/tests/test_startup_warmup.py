@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.services.priority_service import get_priority_service
 from app.services.spam_service import get_spam_service
+from tests.conftest import override_auth
 
 
 def test_lifespan_warms_up_both_ml_services():
@@ -18,6 +19,7 @@ def test_lifespan_warms_up_both_ml_services():
     get_priority_service.cache_clear()
 
     app = create_app()
+    override_auth(app)
     with TestClient(app) as client:
         # Both services should already be constructed (cache populated)
         # by the time the app has finished starting -- no request needed.

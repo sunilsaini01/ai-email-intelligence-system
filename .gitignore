@@ -3,6 +3,9 @@
 *.pem
 *.key
 
+# --- Monitoring (Phase 16B) -- real Slack webhook, never the .example template ---
+monitoring/alertmanager/slack_webhook_url.txt
+
 # --- Python ---
 __pycache__/
 *.py[cod]

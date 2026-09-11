@@ -20,3 +20,5 @@ resources:
   - api-deployment.yaml
   - api-service.yaml
   - agents-deployment.yaml
+  # Phase 16B / FR-72 -- Prometheus, Alertmanager, Grafana, kafka-exporter.
+  - monitoring

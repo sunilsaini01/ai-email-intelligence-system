@@ -1,0 +1,57 @@
+# Phase 16B / FR-72. Plain static scrape config -- deliberately NOT the
+# Prometheus Operator / ServiceMonitor CRD pattern, which would require
+# installing a much larger operator stack disproportionate to this
+# project's single-node kind-validated reality (see
+# docs/architecture/architecture_monitoring.md "Why Not the Prometheus
+# Operator"). The k8s/monitoring/ ConfigMap for the in-cluster deployment
+# mirrors this same file's shape with in-cluster DNS targets, kept as a
+# separate file rather than templated, matching this project's existing
+# docker-compose vs k8s duplication precedent (env vars, not one shared
+# templating layer -- see docker-compose.yml vs k8s/configmap.yaml).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # The api process. /metrics is mounted at root (app/main.py), same port
+  # as everything else (8000 in-container, 8001 on the Windows host --
+  # scraped in-container here, so 8000).
+  - job_name: "email-ai-api"
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: api
+
+  # The agents process. No other HTTP server exists in this process (see
+  # k8s/agents-deployment.yaml's comment) -- 9100 is exclusively
+  # prometheus_client's own metrics server (app.core.metrics.start_metrics_server,
+  # started from app/agents/runner.py).
+  - job_name: "email-ai-agents"
+    static_configs:
+      - targets: ["agents:9100"]
+        labels:
+          service: agents
+
+  # Kafka consumer-group lag -- the "queue depth" proxy documented in
+  # app/core/metrics.py's module docstring and
+  # docs/architecture/architecture_monitoring.md "Queue Depth = Consumer
+  # Lag". Scrapes the real broker directly, not this application.
+  - job_name: "kafka-exporter"
+    static_configs:
+      - targets: ["kafka-exporter:9308"]
+
+  # Prometheus's own self-monitoring -- standard practice, not FR-72 scope
+  # creep: if Prometheus itself falls behind on scraping, every other
+  # signal in this stack silently goes stale without this.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

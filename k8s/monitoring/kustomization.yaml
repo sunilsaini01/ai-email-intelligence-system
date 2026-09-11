@@ -1,0 +1,41 @@
+# Nested kustomization -- referenced as a single resource entry
+# ("monitoring") from the root k8s/kustomization.yaml. configMapGenerator
+# is used ONLY for the three Grafana files below, generating a ConfigMap
+# from a file's content instead of hand-duplicating a large dashboard
+# JSON into inline YAML `data:` -- everything else in this phase follows
+# the root kustomization's existing plain-`resources:` convention.
+#
+# These three files (grafana-datasource.yml, grafana-dashboards-
+# provisioning.yml, grafana-dashboard-system-health.json) are COPIES of
+# monitoring/grafana/... (the docker-compose source of truth) -- kustomize's
+# file-source security restriction forbids referencing paths outside this
+# directory (verified: `kubectl kustomize k8s/` rejects a `../../` file
+# source with "must resolve to a file" / "not in or below"), so an
+# in-tree copy is the only option that isn't a bigger structural change.
+# Kept in sync by hand, same precedent as prometheus.yml/alert_rules.yml
+# already established for the api/agents scrape config vs this file's own
+# ConfigMap-embedded copies below.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: email-ai
+
+resources:
+  - agents-metrics-service.yaml
+  - prometheus-configmap.yaml
+  - prometheus-deployment.yaml
+  - alertmanager-configmap.yaml
+  - alertmanager-deployment.yaml
+  - kafka-exporter-deployment.yaml
+  - grafana-deployment.yaml
+
+configMapGenerator:
+  - name: grafana-provisioning-datasources
+    files:
+      - datasource.yml=grafana-datasource.yml
+  - name: grafana-provisioning-dashboards
+    files:
+      - dashboards.yml=grafana-dashboards-provisioning.yml
+  - name: grafana-dashboard-system-health
+    files:
+      - email_intelligence_system_health.json=grafana-dashboard-system-health.json

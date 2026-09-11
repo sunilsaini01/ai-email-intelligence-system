@@ -57,8 +57,16 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = True  # structured JSON logs in prod; set False for readable local dev logs
 
-    # --- Security (placeholders — wired up properly in a later phase) ---
+    # --- Security ---
+    # Was a placeholder ("wired up properly in a later phase") since
+    # Phase 1 -- Phase 17 is that later phase. Now the HS256 signing key
+    # for every JWT app/core/security.py issues/verifies. Still must be
+    # replaced before any non-local use, same as before.
     SECRET_KEY: str = Field(default="CHANGE_ME_IN_PRODUCTION")
+
+    # --- Phase 17 (real authentication) ---
+    JWT_ALGORITHM: str = Field(default="HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60 * 24)  # 24h -- a documented development default, not a validated session-length policy; the PRD names none.
 
     # --- Phase 11 (Manager Dashboard) — CORS ---
     # The frontend/ Vite dev server runs on a different origin (localhost:5173)
@@ -152,6 +160,27 @@ class Settings(BaseSettings):
     # (f"{prefix}-{agent_name}"), so agent replicas can scale independently
     # later without a design change now. See docs/kafka_architecture.md.
     KAFKA_CONSUMER_GROUP_PREFIX: str = Field(default="email-ai")
+
+    # --- Phase 16B (Monitoring & Alerting, FR-72) ---
+    # Port the `agents` process's own metrics HTTP server binds to
+    # (app.core.metrics.start_metrics_server, called from
+    # app/agents/runner.py) -- that process has no other HTTP server, see
+    # k8s/agents-deployment.yaml. The `api` process does not use this
+    # setting; it mounts /metrics onto its existing FastAPI app instead
+    # (app/main.py), on the same port as everything else.
+    METRICS_PORT: int = Field(default=9100)
+
+    # How long a workflow may sit in RUNNING before
+    # WorkflowExecutionRepository.list_stale_running() (and the
+    # workflow_stuck_total gauge it feeds) flags it. A documented
+    # development default, NOT a validated SLA value -- the PRD names none
+    # for this. Deliberately well above the PRD's own 15s hard latency
+    # limit: this threshold is for "the Orchestrator's in-memory tracker
+    # was lost" (see app/agents/orchestrator.py's module docstring), a
+    # different failure mode than a slow-but-progressing workflow, which
+    # the latency histogram/alerts already cover on their own.
+    STUCK_WORKFLOW_THRESHOLD_MINUTES: int = Field(default=10)
+    STUCK_WORKFLOW_CHECK_INTERVAL_SECONDS: int = Field(default=60)
 
 
 @lru_cache

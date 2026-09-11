@@ -276,8 +276,86 @@ services:
       disable: true
 
 
+  # Phase 16B / FR-72 -- Kafka consumer-lag exporter. Scraped by
+  # Prometheus as the documented "queue depth" proxy (see
+  # app/core/metrics.py's module docstring and
+  # docs/architecture/architecture_monitoring.md "Queue Depth = Consumer
+  # Lag"). Reads the real broker directly; not a call into this
+  # application.
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: email_ai_kafka_exporter
+    restart: unless-stopped
+    command:
+      - --kafka.server=kafka:29092
+    ports:
+      - "9308:9308"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: email_ai_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+      - agents
+      - kafka-exporter
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: email_ai_alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # Real webhook URL, gitignored -- copy from
+      # slack_webhook_url.txt.example and fill in, same convention as
+      # backend/.env vs backend/.env.example. Alertmanager's own
+      # `api_url_file` reads it directly; the URL never appears in any
+      # committed file. See alertmanager.yml's own header comment.
+      - ./monitoring/alertmanager/slack_webhook_url.txt:/etc/alertmanager/secrets/slack_webhook_url.txt:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: email_ai_grafana
+    restart: unless-stopped
+    environment:
+      # Local dev only -- same no-real-auth stance already disclosed
+      # project-wide (docs/architecture.md, dashboard_security.md). Not a
+      # new gap this phase introduces.
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+
 # Persistent Docker volumes
 volumes:
   postgres_data:
   kafka_data:
   mlflow_artifacts:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:

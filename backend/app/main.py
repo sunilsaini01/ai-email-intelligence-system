@@ -33,8 +33,9 @@ from contextlib import asynccontextmanager
 # together and this comment's reproduction no longer applies.
 import pandas  # noqa: F401,E402
 import sklearn  # noqa: F401,E402
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -207,6 +208,25 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     app.include_router(api_router, prefix=f"/api/{settings.API_VERSION}")
+
+    # Phase 16B / FR-72: at root, not under /api/{version} -- this is a
+    # scrape target for infrastructure (Prometheus), not a versioned
+    # business API, matching Prometheus's own /metrics convention. See
+    # app/middleware/request_logging.py for why this exact path is
+    # excluded from the request metrics it exposes.
+    #
+    # A plain route, not app.mount(..., make_asgi_app()) -- found by this
+    # phase's own real-verification step (master prompt section 19, "do
+    # not stop after confirming /metrics returns HTTP 200"): Starlette's
+    # Mount redirects a request for the mount path itself (no trailing
+    # slash) to path + "/" with a 307, which `curl http://.../metrics`
+    # (Prometheus's own default scrape request, no trailing slash) hits
+    # every time -- an extra redirect hop at best, and not guaranteed to
+    # be followed by every possible scraper. A plain route has no such
+    # behavior.
+    @app.get("/metrics")
+    def metrics() -> Response:
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     return app
 

@@ -1,0 +1,37 @@
+# Mirrors monitoring/alertmanager/alertmanager.yml. api_url_file path
+# matches the volumeMount in alertmanager-deployment.yaml, sourced from
+# the email-ai-secrets Secret's SLACK_WEBHOOK_URL key (a Secret volume
+# mount exposes each key as its own file) -- same file-based-secret
+# mechanism as the docker-compose version, no envsubst needed here either.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: email-ai
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+
+    route:
+      receiver: slack
+      group_by: ["alertname", "fr"]
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - match:
+            severity: info
+          repeat_interval: 24h
+
+    receivers:
+      - name: slack
+        slack_configs:
+          - api_url_file: /etc/alertmanager/secrets/SLACK_WEBHOOK_URL
+            channel: "#email-ai-alerts"
+            send_resolved: true
+            title: '{{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})'
+            text: >-
+              {{ range .Alerts }}{{ .Annotations.summary }}
+              {{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+              {{ end }}

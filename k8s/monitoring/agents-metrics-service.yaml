@@ -1,0 +1,20 @@
+# Phase 16B / FR-72. NOT a general-purpose Service for the agents
+# Deployment -- agents-deployment.yaml's own comment ("nothing ever
+# routes traffic to this Pod via a Service") still holds for business
+# traffic. This Service exists for exactly one consumer, Prometheus,
+# scraping exactly one port (9100, prometheus_client's own metrics
+# server -- see app/core/metrics.py / app/agents/runner.py). It carries
+# no application request traffic.
+apiVersion: v1
+kind: Service
+metadata:
+  name: agents-metrics
+  namespace: email-ai
+spec:
+  type: ClusterIP
+  selector:
+    app: agents
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: 9100

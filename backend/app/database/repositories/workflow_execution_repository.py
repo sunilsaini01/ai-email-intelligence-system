@@ -1,12 +1,12 @@
 """Repository for workflow_executions (Module 13 / Phase 12, FR-63)."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.workflow_execution import STATUS_PENDING, WorkflowExecution
+from app.models.workflow_execution import STATUS_PENDING, STATUS_RUNNING, WorkflowExecution
 
 
 class WorkflowExecutionRepository:
@@ -33,7 +33,39 @@ class WorkflowExecutionRepository:
     ) -> WorkflowExecution:
         workflow.status = status
         if mark_completed:
-            workflow.completed_at = datetime.now(UTC)
+            completed_at = datetime.now(UTC)
+            workflow.completed_at = completed_at
+            # started_at is always set (has a non-nullable default, see the
+            # model) so this is safe without a None-check. SQLite (used by
+            # this repository's own fast unit tests, see
+            # tests/test_workflow_execution_repository.py) drops tzinfo on
+            # round-trip even for a DateTime(timezone=True) column --
+            # confirmed by direct reproduction (TypeError: can't subtract
+            # offset-naive and offset-aware datetimes) -- real Postgres
+            # (timestamptz) does not have this problem, but normalizing
+            # here costs nothing and makes this correct regardless of
+            # backend.
+            started_at = workflow.started_at
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=UTC)
+            workflow.duration_ms = (completed_at - started_at).total_seconds() * 1000
         await self.session.commit()
         await self.session.refresh(workflow)
         return workflow
+
+    async def list_stale_running(self, older_than_minutes: int) -> list[WorkflowExecution]:
+        """Phase 16B / FR-72: surfaces the orchestrator's known, disclosed
+        gap (Orchestrator._pending is process-local and lost on restart --
+        app/agents/orchestrator.py) as an observable signal. A workflow
+        that's been RUNNING longer than this threshold either lost its
+        in-memory tracker or is genuinely waiting on an agent that will
+        never report. Detection only, by design -- no auto-recovery here,
+        see docs/architecture/architecture_monitoring.md "Stuck Workflow
+        Detection" for why recovery stays out of scope for this phase."""
+        cutoff = datetime.now(UTC) - timedelta(minutes=older_than_minutes)
+        result = await self.session.execute(
+            select(WorkflowExecution).where(
+                WorkflowExecution.status == STATUS_RUNNING, WorkflowExecution.started_at < cutoff
+            )
+        )
+        return list(result.scalars().all())
