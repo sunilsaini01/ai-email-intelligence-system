@@ -9,7 +9,6 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.models.reply_draft import DRAFT_STATUSES, GENERATION_POLICIES
-from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
 
 
 class ReplyGenerateRequest(BaseModel):
@@ -21,13 +20,25 @@ class ReplyGenerateRequest(BaseModel):
     source_email_id: uuid.UUID | None = Field(
         default=None, description="If this email is already a canonical EmailRecord (Phase 9). Not required."
     )
-    organization_id: str = Field(default=DEFAULT_ORGANIZATION_ID)
+    # organization_id removed (Phase 20): it's derived from the
+    # authenticated caller (current_user.organization_id) now, same fix
+    # app/api/v1/endpoints/dashboard.py already got in Phase 17 -- this
+    # endpoint was missed then. A caller-supplied org string here would
+    # have let any signed-in user generate/read/approve/reject reply
+    # drafts belonging to a DIFFERENT organization just by passing a
+    # different value.
 
 
 class ReplyDraftResponse(BaseModel):
     draft_id: uuid.UUID
     status: str = Field(description=f"One of {DRAFT_STATUSES}.")
     generation_policy: str = Field(description=f"One of {GENERATION_POLICIES}.")
+    # Phase 20 addition: a reviewer needs to see what the draft is
+    # actually replying to in order to judge it -- ReplyDraftResponse
+    # previously carried only the generated text, with no way to see the
+    # source email through the API at all.
+    source_subject: str
+    source_body: str
     generated_text: str | None
     edited_text: str | None
     edit_distance: int | None = Field(default=None, description="Levenshtein distance between generated_text and edited_text. Only set on EDIT.")
@@ -42,6 +53,10 @@ class ReplyDraftResponse(BaseModel):
     failure_reason: str | None
     created_at: datetime
     reviewed_at: datetime | None
+
+
+class ReplyDraftListResponse(BaseModel):
+    drafts: list[ReplyDraftResponse]
 
 
 class ReplyEditRequest(BaseModel):
@@ -68,6 +83,7 @@ class ReplyFeedbackResponse(BaseModel):
 __all__ = [
     "ReplyGenerateRequest",
     "ReplyDraftResponse",
+    "ReplyDraftListResponse",
     "ReplyEditRequest",
     "ReplyReviewActionRequest",
     "ReplyFeedbackRequest",

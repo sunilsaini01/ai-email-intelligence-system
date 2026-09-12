@@ -344,3 +344,107 @@ def test_feedback_endpoint_logs_and_returns_id(sqlite_session_factory, empty_ret
     assert body["status"] == "logged"
     logged = (tmp_path / "auto_reply_feedback.jsonl").read_text(encoding="utf-8")
     assert body["feedback_id"] in logged
+
+
+# --- Phase 20: Reply Draft Review UI (list endpoint + tenant isolation) ---
+
+
+def _client_for_organization(session_factory, fake_retrieval_service, organization_id, fake_llm_response="Here is your draft reply."):
+    """Same as _make_client, but signs the caller in as a DIFFERENT
+    organization than the shared override_auth default ("default") --
+    needed to prove the Phase 20 tenant-isolation fix actually isolates
+    tenants, not just that it compiles."""
+    import uuid
+    from datetime import UTC, datetime
+
+    from app.core.auth_dependency import get_current_user
+    from app.models.user import ROLE_MEMBER, User
+
+    client, fake_auto_reply_service = _make_client(session_factory, fake_retrieval_service, fake_llm_response)
+
+    def _fake_user() -> User:
+        return User(
+            id=uuid.uuid4(),
+            email=f"user@{organization_id}.example.com",
+            hashed_password="unused",
+            organization_id=organization_id,
+            role=ROLE_MEMBER,
+            is_active=True,
+            created_at=datetime.now(UTC),
+        )
+
+    client.app.dependency_overrides[get_current_user] = _fake_user
+    return client, fake_auto_reply_service
+
+
+def test_list_reply_drafts_defaults_to_pending_generated_drafts(sqlite_session_factory, empty_retrieval_service):
+    client, _ = _make_client(sqlite_session_factory, empty_retrieval_service)
+    client.post("/api/v1/reply/generate", json={"subject": "Q1", "body": "body 1"})
+    client.post("/api/v1/reply/generate", json={"subject": "Q2", "body": "body 2"})
+
+    response = client.get("/api/v1/reply")
+
+    assert response.status_code == 200
+    drafts = response.json()["drafts"]
+    assert len(drafts) == 2
+    assert {d["source_subject"] for d in drafts} == {"Q1", "Q2"}
+    # Phase 20 addition -- reviewers need the source email to judge the draft.
+    assert drafts[0]["source_body"] in ("body 1", "body 2")
+
+
+def test_list_reply_drafts_excludes_a_draft_once_it_has_been_approved(sqlite_session_factory, empty_retrieval_service):
+    client, _ = _make_client(sqlite_session_factory, empty_retrieval_service)
+    draft_id = client.post("/api/v1/reply/generate", json={"subject": "Q", "body": "body"}).json()["draft_id"]
+    client.post(f"/api/v1/reply/{draft_id}/approve", json={"reviewer_id": "agent-1"})
+
+    pending = client.get("/api/v1/reply").json()["drafts"]
+    assert pending == []
+
+    approved = client.get("/api/v1/reply", params={"status": "APPROVED"}).json()["drafts"]
+    assert len(approved) == 1
+    assert approved[0]["draft_id"] == draft_id
+
+
+def test_list_reply_drafts_rejects_an_invalid_status(sqlite_session_factory, empty_retrieval_service):
+    client, _ = _make_client(sqlite_session_factory, empty_retrieval_service)
+    response = client.get("/api/v1/reply", params={"status": "NOT_A_REAL_STATUS"})
+    assert response.status_code == 422
+
+
+def test_list_reply_drafts_only_shows_the_callers_own_organization(sqlite_session_factory, empty_retrieval_service):
+    org_a_client, _ = _client_for_organization(sqlite_session_factory, empty_retrieval_service, "org-a")
+    org_b_client, _ = _client_for_organization(sqlite_session_factory, empty_retrieval_service, "org-b")
+
+    org_a_client.post("/api/v1/reply/generate", json={"subject": "Org A's email", "body": "body"})
+
+    assert len(org_a_client.get("/api/v1/reply").json()["drafts"]) == 1
+    assert org_b_client.get("/api/v1/reply").json()["drafts"] == []
+
+
+def test_get_reply_draft_is_not_visible_to_a_different_organization(sqlite_session_factory, empty_retrieval_service):
+    org_a_client, _ = _client_for_organization(sqlite_session_factory, empty_retrieval_service, "org-a")
+    org_b_client, _ = _client_for_organization(sqlite_session_factory, empty_retrieval_service, "org-b")
+    draft_id = org_a_client.post("/api/v1/reply/generate", json={"subject": "Q", "body": "body"}).json()["draft_id"]
+
+    assert org_a_client.get(f"/api/v1/reply/{draft_id}").status_code == 200
+    assert org_b_client.get(f"/api/v1/reply/{draft_id}").status_code == 404
+
+
+def test_approve_reply_draft_is_not_possible_from_a_different_organization(sqlite_session_factory, empty_retrieval_service):
+    """Before Phase 20, organization_id was a caller-supplied query
+    parameter here -- any signed-in user of ANY organization could approve
+    (or edit, or reject) another organization's reply draft just by
+    passing a different value. This is the regression test for that fix:
+    org_b_client no longer has any way to name a different organization at
+    all, so it can only ever see its own."""
+    org_a_client, _ = _client_for_organization(sqlite_session_factory, empty_retrieval_service, "org-a")
+    org_b_client, _ = _client_for_organization(sqlite_session_factory, empty_retrieval_service, "org-b")
+    draft_id = org_a_client.post("/api/v1/reply/generate", json={"subject": "Q", "body": "body"}).json()["draft_id"]
+
+    response = org_b_client.post(f"/api/v1/reply/{draft_id}/approve", json={"reviewer_id": "intruder"})
+
+    assert response.status_code == 404
+    # Confirm it genuinely wasn't approved, not just that org_b got 404 while it silently succeeded.
+    still_pending = org_a_client.get("/api/v1/reply").json()["drafts"]
+    assert len(still_pending) == 1
+    assert still_pending[0]["draft_id"] == draft_id

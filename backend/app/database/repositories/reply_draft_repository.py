@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.reply_draft import (
     STATUS_APPROVED,
     STATUS_EDITED,
+    STATUS_GENERATED,
     STATUS_REJECTED,
     ReplyDraft,
 )
@@ -43,6 +44,25 @@ class ReplyDraftRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def list_by_status(self, organization_id: str, status: str = STATUS_GENERATED, limit: int = 100) -> list[ReplyDraft]:
+        """Phase 20 (Reply Draft Review UI). Defaults to STATUS_GENERATED
+        -- a fresh draft nobody has acted on yet -- which is what a review
+        queue actually needs to show. EDITED/APPROVED/REJECTED are already
+        terminal (edit() itself sets reviewed_at, there is no separate
+        "approve after editing" step in this lifecycle -- see
+        app/models/reply_draft.py's own STATUS_* comments), so a caller
+        can still pass a different `status` to look at reviewed history,
+        but the review queue itself only ever needs the default. Newest
+        first: a fresh draft is more likely to still be actionable than
+        one that's sat for days."""
+        result = await self.session.execute(
+            select(ReplyDraft)
+            .where(ReplyDraft.organization_id == organization_id, ReplyDraft.status == status)
+            .order_by(ReplyDraft.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
 
     async def approve(self, draft: ReplyDraft, reviewer_id: str | None) -> ReplyDraft:
         draft.status = STATUS_APPROVED

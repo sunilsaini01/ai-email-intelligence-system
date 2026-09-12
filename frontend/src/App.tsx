@@ -10,6 +10,7 @@ import { SlaPage } from "./pages/SlaPage";
 import { AgentsPage } from "./pages/AgentsPage";
 import { ModelQualityPage } from "./pages/ModelQualityPage";
 import { ReviewQueuePage } from "./pages/ReviewQueuePage";
+import { ReplyDraftsPage } from "./pages/ReplyDraftsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { useDashboardWebSocket } from "./hooks/useDashboardWebSocket";
@@ -46,6 +47,7 @@ function DashboardRoutes() {
         <Route path="agents" element={<AgentsPage />} />
         <Route path="models" element={<ModelQualityPage />} />
         <Route path="review-queue" element={<ReviewQueuePage />} />
+        <Route path="reply-drafts" element={<ReplyDraftsPage />} />
         <Route path="reports" element={<ReportsPage />} />
       </Route>
     </Routes>

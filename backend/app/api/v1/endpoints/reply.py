@@ -30,10 +30,11 @@ import logging
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_dependency import get_current_user
 from app.database.repositories.email_repository import EmailRepository
 from app.database.repositories.reply_draft_repository import ReplyDraftRepository
 from app.database.session import DB_WRITE_TIMEOUT_SECONDS, get_db
@@ -44,6 +45,7 @@ from app.models.feedback_event import (
     ACTION_RELEVANCE,
 )
 from app.models.reply_draft import (
+    DRAFT_STATUSES,
     POLICY_INSUFFICIENT_CONTEXT,
     POLICY_NO_SIMILAR_EMAILS,
     POLICY_TIMEOUT,
@@ -51,9 +53,11 @@ from app.models.reply_draft import (
     STATUS_GENERATED,
     ReplyDraft,
 )
+from app.models.user import User
 from app.nlp.reply_prompt import RetrievedContextItem
 from app.retrieval.resolution_status import RESOLVED
 from app.schemas.auto_reply import (
+    ReplyDraftListResponse,
     ReplyDraftResponse,
     ReplyEditRequest,
     ReplyFeedbackRequest,
@@ -90,6 +94,8 @@ def _draft_to_response(draft: ReplyDraft) -> ReplyDraftResponse:
         draft_id=draft.id,
         status=draft.status,
         generation_policy=draft.generation_policy,
+        source_subject=draft.source_subject,
+        source_body=draft.source_body,
         generated_text=draft.generated_text,
         edited_text=draft.edited_text,
         edit_distance=draft.edit_distance,
@@ -132,11 +138,16 @@ async def _fetch_resolved_context(
     retrieval_service: RetrievalService,
     email_repository: EmailRepository,
     request: ReplyGenerateRequest,
+    organization_id: str,
 ) -> tuple[list[dict], str | None, float, bool]:
     """Returns (usable_candidates, embedding_model, retrieval_latency_ms,
     context_fetch_failed). Mirrors app/api/v1/endpoints/retrieval.py's own
     vector-search-then-DB-filter pattern, additionally filtering for
-    resolution_status == RESOLVED (FR-48's literal requirement)."""
+    resolution_status == RESOLVED (FR-48's literal requirement).
+    `organization_id` is a separate parameter, not read off `request`
+    (Phase 20): it comes from the authenticated caller, never from the
+    request body -- see ReplyGenerateRequest's own comment on why that
+    field was removed."""
     start = time.perf_counter()
     try:
         raw = await run_in_threadpool(
@@ -144,7 +155,7 @@ async def _fetch_resolved_context(
             subject=request.subject,
             body=request.body,
             top_k=_CONTEXT_FETCH_K,
-            organization_id=request.organization_id,
+            organization_id=organization_id,
             category=request.category,
             department=request.department,
         )
@@ -154,7 +165,7 @@ async def _fetch_resolved_context(
 
     candidates: list[dict] = []
     for match in raw["matches"]:
-        record = await email_repository.get_by_content_hash(request.organization_id, match["content_hash"])
+        record = await email_repository.get_by_content_hash(organization_id, match["content_hash"])
         if record is None or record.is_deleted or record.resolution_status != RESOLVED:
             continue
         candidates.append(
@@ -173,6 +184,7 @@ async def _fetch_resolved_context(
 @router.post("/generate", response_model=ReplyDraftResponse)
 async def generate_reply(
     request: ReplyGenerateRequest,
+    current_user: User = Depends(get_current_user),
     auto_reply_service: AutoReplyService = Depends(get_auto_reply_service),
     retrieval_service: RetrievalService = Depends(get_retrieval_service),
     db: AsyncSession = Depends(get_db),
@@ -180,7 +192,7 @@ async def generate_reply(
     start = time.perf_counter()
 
     candidates, embedding_model, retrieval_latency_ms, context_fetch_failed = await _fetch_resolved_context(
-        retrieval_service, EmailRepository(db), request
+        retrieval_service, EmailRepository(db), request, current_user.organization_id
     )
     selected = select_context(candidates, min_score=MIN_CONTEXT_SCORE)
     context_items = [
@@ -221,7 +233,7 @@ async def generate_reply(
     try:
         draft = await asyncio.wait_for(
             repository.create(
-                organization_id=request.organization_id,
+                organization_id=current_user.organization_id,
                 source_email_id=request.source_email_id,
                 source_subject=request.subject,
                 source_body=request.body,
@@ -257,11 +269,27 @@ async def generate_reply(
     return _draft_to_response(draft)
 
 
+@router.get("", response_model=ReplyDraftListResponse)
+async def list_reply_drafts(
+    current_user: User = Depends(get_current_user),
+    status: str = Query(default=STATUS_GENERATED, description=f"One of {DRAFT_STATUSES}."),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+) -> ReplyDraftListResponse:
+    """Phase 20 (Reply Draft Review UI). Defaults to STATUS_GENERATED --
+    see ReplyDraftRepository.list_by_status's own docstring for why that's
+    the one status an actual review queue needs."""
+    if status not in DRAFT_STATUSES:
+        raise HTTPException(status_code=422, detail=f"status must be one of {DRAFT_STATUSES}.")
+    drafts = await ReplyDraftRepository(db).list_by_status(current_user.organization_id, status=status, limit=limit)
+    return ReplyDraftListResponse(drafts=[_draft_to_response(d) for d in drafts])
+
+
 @router.get("/{draft_id}", response_model=ReplyDraftResponse)
 async def get_reply_draft(
-    draft_id: uuid.UUID, organization_id: str = "default", db: AsyncSession = Depends(get_db)
+    draft_id: uuid.UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> ReplyDraftResponse:
-    draft = await ReplyDraftRepository(db).get_by_id(organization_id, draft_id)
+    draft = await ReplyDraftRepository(db).get_by_id(current_user.organization_id, draft_id)
     if draft is None:
         raise HTTPException(status_code=404, detail="Reply draft not found.")
     return _draft_to_response(draft)
@@ -271,9 +299,10 @@ async def get_reply_draft(
 async def approve_reply_draft(
     draft_id: uuid.UUID,
     request: ReplyReviewActionRequest,
-    organization_id: str = "default",
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ReplyDraftResponse:
+    organization_id = current_user.organization_id
     repository = ReplyDraftRepository(db)
     draft = await repository.get_by_id(organization_id, draft_id)
     if draft is None:
@@ -323,9 +352,10 @@ async def approve_reply_draft(
 async def edit_reply_draft(
     draft_id: uuid.UUID,
     request: ReplyEditRequest,
-    organization_id: str = "default",
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ReplyDraftResponse:
+    organization_id = current_user.organization_id
     repository = ReplyDraftRepository(db)
     draft = await repository.get_by_id(organization_id, draft_id)
     if draft is None:
@@ -355,9 +385,10 @@ async def edit_reply_draft(
 async def reject_reply_draft(
     draft_id: uuid.UUID,
     request: ReplyReviewActionRequest,
-    organization_id: str = "default",
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ReplyDraftResponse:
+    organization_id = current_user.organization_id
     repository = ReplyDraftRepository(db)
     draft = await repository.get_by_id(organization_id, draft_id)
     if draft is None:

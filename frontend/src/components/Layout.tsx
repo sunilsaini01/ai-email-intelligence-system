@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { to: "/agents", label: "Agent Workload" },
   { to: "/models", label: "Model Quality" },
   { to: "/review-queue", label: "Human Review Queue" },
+  { to: "/reply-drafts", label: "Reply Drafts" },
   { to: "/reports", label: "Reports" },
 ];
 

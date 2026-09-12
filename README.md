@@ -498,7 +498,7 @@ trained on.
 **Watching the system run.** `prometheus_client` for collecting metrics,
 Grafana for dashboards, and Alertmanager for alerts.
 
-**Automated testing.** pytest and pytest-asyncio, with 592 tests passing
+**Automated testing.** pytest and pytest-asyncio, with 598 tests passing
 as of the last full run.
 
 **Infrastructure.** Docker and Docker Compose for local development, and
@@ -606,12 +606,19 @@ number — that's the standard held for every claim below.
   connecting or disconnecting a mailbox — require the signed-in user to
   actually be an admin. Reading data (like the list of connected
   mailboxes) stays open to any signed-in member.
+- **Reply Draft Review UI** — a dashboard page for reading, editing,
+  approving, and rejecting AI-drafted replies, which previously only
+  existed as an API with no screen behind it. Building it surfaced two
+  gaps worth calling out: there was no way to even list which drafts
+  were waiting for review, and the endpoints for reading/approving/
+  editing/rejecting a draft still trusted a caller-supplied organization
+  ID instead of the signed-in user's own — the same cross-tenant issue
+  already fixed for the dashboard back in the Authentication phase, just
+  missed in this one file. Both are fixed now: there's a proper list
+  endpoint, and every action is scoped to the caller's real organization.
 
 **Planned:**
 
-- A dashboard page for reviewing, editing, and approving/rejecting
-  AI-drafted replies — the API for this already exists, there's just no
-  screen for it yet.
 - A database-backed, admin-configurable routing-rules screen, replacing
   the hardcoded rule list routing currently uses — this is the next
   place the new admin role gets put to use.
