@@ -26,6 +26,7 @@ from app.models.priority_prediction_log import PriorityPredictionLog
 from app.models.reply_draft import ReplyDraft
 from app.models.retraining_trigger import RetrainingTrigger
 from app.models.routing_decision_log import RoutingDecisionLog
+from app.models.routing_override import RoutingOverride
 from app.models.sentiment_prediction_log import SentimentPredictionLog
 from app.models.spam_prediction_log import SpamPredictionLog
 from app.models.summary_log import SummaryLog
@@ -44,6 +45,7 @@ __all__ = [
     "ReplyDraft",
     "RetrainingTrigger",
     "RoutingDecisionLog",
+    "RoutingOverride",
     "SentimentPredictionLog",
     "SpamPredictionLog",
     "SummaryLog",

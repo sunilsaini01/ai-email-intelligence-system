@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: "/models", label: "Model Quality" },
   { to: "/review-queue", label: "Human Review Queue" },
   { to: "/reply-drafts", label: "Reply Drafts" },
+  { to: "/routing-rules", label: "Routing Rules" },
   { to: "/reports", label: "Reports" },
 ];
 

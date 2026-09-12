@@ -78,6 +78,7 @@ from app.models.workflow_execution import (
 )
 from app.retrieval.identity import compute_content_hash
 from app.services.retrieval_service import get_retrieval_service
+from app.services.routing_override_service import apply_organization_overrides
 from app.services.routing_service import get_routing_service
 
 logger = logging.getLogger("app.agents.orchestrator")
@@ -246,14 +247,26 @@ class Orchestrator:
             precomputed_sentiment=tracker.results.get("sentiment"),
             precomputed_priority=tracker.results.get("priority"),
         )
-        category = (decision.get("supporting_signals", {}).get("category") or {}).get("top")
-        department = decision.get("department")
+
         priority_result = tracker.results.get("priority")
         priority_label = priority_result.get("priority") if priority_result else None
 
         any_dispatched_failure = any(v is None for v in tracker.results.values())
 
         async with AsyncSessionLocal() as session:
+            # Phase 21: admin-configurable overrides, same final pass
+            # app/api/v1/endpoints/routing.py's own /predict endpoint
+            # applies after its own route() call -- see that module's
+            # comment for why this can't live inside RoutingService.route()
+            # itself. category/department are read AFTER this so an
+            # override that changes the department is what actually gets
+            # indexed onto the EmailRecord below, not the pre-override one.
+            decision = await apply_organization_overrides(
+                session, tracker.organization_id, decision, tracker.subject, tracker.body, tracker.sender_email
+            )
+            category = (decision.get("supporting_signals", {}).get("category") or {}).get("top")
+            department = decision.get("department")
+
             email_repo = EmailRepository(session)
             content_hash = compute_content_hash(tracker.subject, tracker.body)
             index_failed = False

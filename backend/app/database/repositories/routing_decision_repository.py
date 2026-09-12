@@ -28,8 +28,19 @@ class RoutingDecisionRepository:
         keyword_matcher_version: str,
         upstream_failures: list[str],
         processing_ms: float,
+        organization_id: str | None = None,
     ) -> RoutingDecisionLog:
+        # organization_id added Phase 21: every decision was previously
+        # logged under the model's own DEFAULT_ORGANIZATION_ID default
+        # regardless of which organization actually called /routing/predict
+        # -- the same caller-supplied-vs-token-derived gap already fixed
+        # for reply.py this same phase. Optional here (not required)
+        # so this repository's own unit tests don't all need updating for
+        # a column they don't otherwise exercise; the endpoint always
+        # passes the real one.
+        kwargs = {"organization_id": organization_id} if organization_id is not None else {}
         record = RoutingDecisionLog(
+            **kwargs,
             subject=subject,
             body=body,
             department=department,

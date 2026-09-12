@@ -30,6 +30,7 @@ EXPECTED_TABLES = {
     "users",
     "mailbox_connections",
     "mailbox_ingested_messages",
+    "routing_overrides",
 }
 
 
@@ -48,6 +49,7 @@ def test_models_dunder_all_matches_the_actual_registered_models():
         "IntentPredictionLog",
         "MailboxConnection",
         "MailboxIngestedMessage",
+        "RoutingOverride",
         "PriorityPredictionLog",
         "ReplyDraft",
         "RetrainingTrigger",

@@ -240,8 +240,12 @@ about not overstating a module's status).
    actually go to. It isn't a machine-learning model at all — it's a
    deterministic rule engine, meaning it follows clear, plainly-written
    if-this-then-that logic, which makes it easy to explain afterward
-   exactly why a given email was routed the way it was. *Status:* live,
-   and every single routing decision is logged so it can be audited
+   exactly why a given email was routed the way it was. On top of that
+   base engine, an organization admin can add their own override rules
+   through the dashboard's Routing Rules page — "if the sender's domain
+   is X, always send it to department Y" — without needing a code
+   deployment. *Status:* live, and every single routing decision (base
+   engine and any override that fired) is logged so it can be audited
    later.
 
 9. **Similar Email Retrieval (the "R" in RAG, explained above).** For
@@ -498,7 +502,7 @@ trained on.
 **Watching the system run.** `prometheus_client` for collecting metrics,
 Grafana for dashboards, and Alertmanager for alerts.
 
-**Automated testing.** pytest and pytest-asyncio, with 598 tests passing
+**Automated testing.** pytest and pytest-asyncio, with 629 tests passing
 as of the last full run.
 
 **Infrastructure.** Docker and Docker Compose for local development, and
@@ -616,12 +620,30 @@ number — that's the standard held for every claim below.
   already fixed for the dashboard back in the Authentication phase, just
   missed in this one file. Both are fixed now: there's a proper list
   endpoint, and every action is scoped to the caller's real organization.
+- **Admin-Configurable Routing Overrides** — the routing engine itself
+  (`app/routing/rules.py`) is a carefully tuned, several-hundred-line
+  heuristic pipeline with its own documented reasoning for every
+  threshold; rewriting it as a generic rules table would have risked
+  quietly discarding real, validated logic for a PRD checkbox. Instead,
+  overrides are a new, additive final pass: an org admin can say "if
+  these conditions match, force this department/action/review flag,"
+  evaluated after the model-driven engine already made its decision, never
+  instead of it. This was explicitly called out as blocked until real
+  authentication and admin roles existed — both now do. One safety net
+  can't be turned off by an override: HR, Legal, and Billing always
+  require human review no matter what an override says. Wired into both
+  places routing actually runs — the synchronous `/routing/predict`
+  endpoint and the asynchronous Kafka pipeline — so a configured override
+  behaves the same regardless of which path an email takes. Verified live
+  against the running Docker stack on both paths, including watching the
+  same email get classified into one department by the model and then
+  visibly re-routed to a different one by an override, to prove it
+  wasn't just the model agreeing with the rule by coincidence. Also fixed
+  the same caller-supplied-organization-ID gap as the two phases above,
+  this time in `/routing/predict` itself.
 
 **Planned:**
 
-- A database-backed, admin-configurable routing-rules screen, replacing
-  the hardcoded rule list routing currently uses — this is the next
-  place the new admin role gets put to use.
 - Confidence calibration for priority/category/intent/routing (today
   only spam is calibrated), and basic model-drift monitoring.
 - Explainability (which factors led to a given classification) surfaced
