@@ -10,6 +10,13 @@ it cannot sit behind protected_router's `Depends(get_current_user)`.
 Identity for `callback` instead comes from the signed `state` parameter
 `connect` minted (app/ingestion/oauth_state.py), which the provider
 guarantees to round-trip back unmodified.
+
+Phase 19 (role-based authorization): connecting or disconnecting a
+mailbox is organization-wide configuration -- it changes what mail every
+member's dashboard eventually sees -- so both depend on `require_admin`,
+not just `get_current_user`. Listing connections stays open to any
+signed-in member: it's read-only, and knowing which mailboxes feed the
+dashboard is ordinary situational awareness, not configuration.
 """
 
 import logging
@@ -18,7 +25,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth_dependency import get_current_user
+from app.core.auth_dependency import get_current_user, require_admin
 from app.core.token_encryption import encrypt_token
 from app.database.repositories.mailbox_connection_repository import MailboxConnectionRepository
 from app.database.session import get_db
@@ -44,7 +51,7 @@ def _validate_provider(provider: str) -> None:
 @router.get("/{provider}/connect", response_model=MailboxConnectResponse)
 async def connect_mailbox(
     provider: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ) -> MailboxConnectResponse:
     _validate_provider(provider)
     try:
@@ -129,7 +136,7 @@ async def list_mailbox_connections(
 @router.delete("/connections/{connection_id}", status_code=204)
 async def disconnect_mailbox(
     connection_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     repo = MailboxConnectionRepository(db)

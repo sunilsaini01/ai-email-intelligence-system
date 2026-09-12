@@ -27,12 +27,13 @@ from datetime import UTC, datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.auth_dependency import get_current_user
+from app.core.auth_dependency import get_current_user, require_admin
 from app.main import create_app
-from app.models.user import ROLE_MEMBER, User
+from app.models.user import ROLE_ADMIN, ROLE_MEMBER, User
 from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
 
 TEST_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+TEST_ADMIN_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 
 def _fake_current_user() -> User:
@@ -47,6 +48,26 @@ def _fake_current_user() -> User:
     )
 
 
+def _fake_admin_user() -> User:
+    """Phase 19 (role-based authorization). Deliberately a SEPARATE
+    fixture from _fake_current_user, not a role swap on the same one:
+    _fake_current_user's role=ROLE_MEMBER is the safer default for every
+    test that doesn't care about roles at all (over 500 of them) -- a
+    test for an admin-gated endpoint has to explicitly opt into this one,
+    so forgetting to gate a newly-added admin-only route shows up as a
+    real, loud test failure (member fixture -> 403) instead of silently
+    passing because the shared default happened to be over-privileged."""
+    return User(
+        id=TEST_ADMIN_USER_ID,
+        email="test-admin-fixture@example.com",
+        hashed_password="unused",
+        organization_id=DEFAULT_ORGANIZATION_ID,
+        role=ROLE_ADMIN,
+        is_active=True,
+        created_at=datetime.now(UTC),
+    )
+
+
 def override_auth(app) -> None:
     """Shared helper for the several test files that build their OWN
     local `client` fixture (they also override get_db for an in-memory
@@ -55,6 +76,22 @@ def override_auth(app) -> None:
     everywhere rather than copy-pasted per file. See test_dashboard_endpoint.py,
     test_reply_endpoint.py, and others for the call site."""
     app.dependency_overrides[get_current_user] = _fake_current_user
+
+
+def override_admin_auth(app) -> None:
+    """Same pattern as override_auth, but for tests that need the signed-in
+    user to be an org admin (see _fake_admin_user's own docstring for why
+    this is a separate fixture rather than a parameter on override_auth).
+    Overrides BOTH get_current_user and require_admin: require_admin
+    itself depends on get_current_user (app/core/auth_dependency.py), and
+    FastAPI's dependency_overrides only substitutes a callable for the
+    exact object requested -- overriding just get_current_user would still
+    invoke this override's replacement, which already returns an admin, so
+    in practice one override suffices, but require_admin is overridden too
+    for clarity and so this helper keeps working if that implementation
+    detail ever changes."""
+    app.dependency_overrides[get_current_user] = _fake_admin_user
+    app.dependency_overrides[require_admin] = _fake_admin_user
 
 
 @pytest.fixture()

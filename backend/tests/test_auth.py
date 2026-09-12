@@ -146,3 +146,52 @@ def test_me_returns_the_authenticated_users_own_identity(client):
     body = response.json()
     assert body["email"] == "me@example.com"
     assert body["organization_id"] == "acme"
+
+
+# --- Phase 19: role-based authorization -------------------------------
+
+
+def test_the_first_user_registered_for_an_organization_becomes_its_admin(client):
+    response = _register(client, email="founder@acme.com", organization_id="acme")
+    assert response.json()["role"] == "admin"
+
+
+def test_the_second_user_registered_for_the_same_organization_is_a_member(client):
+    _register(client, email="founder@acme.com", organization_id="acme")
+    second = _register(client, email="teammate@acme.com", organization_id="acme")
+    assert second.json()["role"] == "member"
+
+
+def test_the_first_user_in_a_different_organization_also_becomes_admin(client):
+    """Admin bootstrapping is per-organization, not global -- the FIRST
+    account for organization "acme" being an admin says nothing about
+    "widgets-inc", which has no accounts yet either."""
+    _register(client, email="founder@acme.com", organization_id="acme")
+    other_org_founder = _register(client, email="founder@widgets-inc.com", organization_id="widgets-inc")
+    assert other_org_founder.json()["role"] == "admin"
+
+
+def test_an_admin_gated_endpoint_rejects_a_member_and_allows_an_admin(client, monkeypatch):
+    """Exercises the real thing end-to-end (register -> login -> call a
+    require_admin-gated route) rather than the conftest.py fixture
+    overrides every other test file uses -- same "this file is the one
+    place that verifies the real auth boundary" stance this module's own
+    docstring already states, extended to the admin boundary. Uses
+    /mailbox/gmail/connect (Phase 18) as a real, already-existing
+    require_admin-gated endpoint; Gmail's own provider construction is
+    monkeypatched so the test asserts on the authorization boundary, not
+    on whether Gmail credentials happen to be configured."""
+    from app.ingestion.fake_mailbox_provider import FakeMailboxProvider
+
+    monkeypatch.setattr("app.api.v1.endpoints.mailbox.build_provider", lambda provider: FakeMailboxProvider())
+
+    _register(client, email="founder@acme.com", organization_id="acme")
+    admin_token = _login(client, email="founder@acme.com").json()["access_token"]
+    _register(client, email="agent@acme.com", organization_id="acme")
+    member_token = _login(client, email="agent@acme.com").json()["access_token"]
+
+    member_response = client.get("/api/v1/mailbox/gmail/connect", headers={"Authorization": f"Bearer {member_token}"})
+    assert member_response.status_code == 403
+
+    admin_response = client.get("/api/v1/mailbox/gmail/connect", headers={"Authorization": f"Bearer {admin_token}"})
+    assert admin_response.status_code == 200

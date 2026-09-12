@@ -498,7 +498,7 @@ trained on.
 **Watching the system run.** `prometheus_client` for collecting metrics,
 Grafana for dashboards, and Alertmanager for alerts.
 
-**Automated testing.** pytest and pytest-asyncio, with 586 tests passing
+**Automated testing.** pytest and pytest-asyncio, with 592 tests passing
 as of the last full run.
 
 **Infrastructure.** Docker and Docker Compose for local development, and
@@ -596,22 +596,35 @@ number — that's the standard held for every claim below.
   Gmail or Outlook account, which needs real developer credentials from
   Google or Microsoft first. There's also no dashboard page yet for
   connecting a mailbox — for now it's API-only.
+- **Role-Based Authorization** — every user already had a role
+  (`admin` or `member`) stored on their account and included in their
+  login token, but nothing checked it. Now it's enforced: the first
+  person to register for an organization automatically becomes its
+  admin (there's no admin yet to promote anyone, so bootstrapping has to
+  start somewhere), everyone who registers after them defaults to
+  member, and organization-wide configuration actions — right now,
+  connecting or disconnecting a mailbox — require the signed-in user to
+  actually be an admin. Reading data (like the list of connected
+  mailboxes) stays open to any signed-in member.
 
 **Planned:**
 
+- A dashboard page for reviewing, editing, and approving/rejecting
+  AI-drafted replies — the API for this already exists, there's just no
+  screen for it yet.
+- A database-backed, admin-configurable routing-rules screen, replacing
+  the hardcoded rule list routing currently uses — this is the next
+  place the new admin role gets put to use.
+- Confidence calibration for priority/category/intent/routing (today
+  only spam is calibrated), and basic model-drift monitoring.
+- Explainability (which factors led to a given classification) surfaced
+  alongside predictions, and a right-to-deletion endpoint for GDPR.
 - Outbound notifications — a webhook or email alert whenever a critical
   or SLA-at-risk email comes in.
 - Automatically generating scheduled reports, and automatically
   triggering model retraining once enough feedback has built up.
-- Role-based **authorization** — every user already has a role
-  (`admin` or `member`) stored on their account and included in their
-  login token, but no endpoint actually checks it yet. Making that
-  distinction real, alongside an admin screen for configuring
-  per-organization category and routing rules, is the next step beyond
-  just knowing who's logged in.
 - Deploying to a real managed cloud Kubernetes cluster, with managed
   Postgres and Kafka, a proper Ingress, and TLS encryption.
-- A formal security and GDPR (data-privacy law) compliance review.
 - Replacing the synthetic training labels for priority, categorization,
   and intent detection with real, human-annotated ones.
 

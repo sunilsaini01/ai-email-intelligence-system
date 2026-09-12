@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
 from app.database.session import get_db
-from app.models.user import User
+from app.models.user import ROLE_ADMIN, User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
@@ -57,3 +57,23 @@ async def get_current_user(
     if user is None or not user.is_active:
         raise _CREDENTIALS_EXCEPTION
     return user
+
+
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Phase 19 (role-based authorization). Layered ON TOP of
+    get_current_user (a route depending on this still goes through the
+    full is_active/token check above) rather than duplicating it -- same
+    "depend on the narrower thing, don't re-implement it" reasoning
+    app/api/v1/router.py's protected_router already established for
+    get_current_user itself. Routes that mutate organization-wide
+    configuration (connecting a mailbox, and Phase 20's routing-rules
+    admin API) depend on this instead of get_current_user; routes that
+    only read or that any signed-in user should be able to act on
+    (submitting feedback, viewing the dashboard) keep depending on
+    get_current_user alone."""
+    if current_user.role != ROLE_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This action requires an organization admin.",
+        )
+    return current_user

@@ -19,7 +19,7 @@ from app.core.auth_dependency import get_current_user
 from app.core.security import create_access_token, hash_password, verify_password
 from app.database.repositories.user_repository import UserRepository
 from app.database.session import get_db
-from app.models.user import User
+from app.models.user import ROLE_ADMIN, ROLE_MEMBER, User
 from app.schemas.auth import RegisterRequest, TokenResponse, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -32,10 +32,21 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
     if await repo.get_by_email(request.email) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered.")
 
+    # Phase 19 (role-based authorization): the FIRST account registered for
+    # an organization becomes its admin -- there is no admin yet to
+    # promote anyone, so bootstrapping has to happen somewhere. Every
+    # later registration for that same organization defaults to member
+    # (UserRepository.create's own default). Two concurrent registrations
+    # against a brand-new organization_id could both read count=0 and both
+    # become admin -- a disclosed, accepted race: the outcome is "two
+    # admins" for that org, not a privilege-escalation bug, so this isn't
+    # worth a DB-level lock for.
+    is_first_user_in_org = await repo.count_for_organization(request.organization_id) == 0
     user = await repo.create(
         email=request.email,
         hashed_password=hash_password(request.password),
         organization_id=request.organization_id,
+        role=ROLE_ADMIN if is_first_user_in_org else ROLE_MEMBER,
     )
     logger.info("user_registered", extra={"user_id": str(user.id), "organization_id": user.organization_id})
     return UserResponse(
