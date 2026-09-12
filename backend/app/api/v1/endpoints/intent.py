@@ -17,9 +17,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_dependency import get_current_user
 from app.database.repositories.intent_prediction_repository import IntentPredictionRepository
 from app.database.session import DB_WRITE_TIMEOUT_SECONDS, get_db
 from app.models.feedback_event import ACTION_CORRECTION
+from app.models.user import User
 from app.schemas.intent import (
     IntentFeedbackRequest,
     IntentFeedbackResponse,
@@ -49,6 +51,7 @@ def _get_intent_service() -> IntentService:
 @router.post("/predict", response_model=IntentPredictionResponse)
 async def predict_intent(
     request: IntentPredictionRequest,
+    current_user: User = Depends(get_current_user),
     service: IntentService = Depends(_get_intent_service),
     db: AsyncSession = Depends(get_db),
 ) -> IntentPredictionResponse:
@@ -78,6 +81,7 @@ async def predict_intent(
                 entities=result["entities"],
                 model_version=result["model_version"],
                 processing_ms=result["processing_ms"],
+                organization_id=current_user.organization_id,
             ),
             timeout=DB_WRITE_TIMEOUT_SECONDS,
         )

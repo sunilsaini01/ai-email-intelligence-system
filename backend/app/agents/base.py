@@ -26,6 +26,8 @@ import logging
 import time
 import uuid
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.metrics import AGENT_EXECUTIONS_TOTAL, INFERENCE_DURATION_SECONDS, INFERENCE_TOTAL
 from app.database.repositories.agent_execution_repository import AgentExecutionRepository
@@ -35,6 +37,7 @@ from app.messaging.producer import publish_dead_letter, publish_event
 from app.messaging.retry import PERMANENT, classify_exception, compute_backoff_seconds
 from app.messaging.schemas import AgentEvent, DeadLetterEnvelope
 from app.models.agent_execution import STATUS_COMPLETED, STATUS_FAILED
+from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
 
 logger = logging.getLogger("app.agents")
 
@@ -51,6 +54,25 @@ class BaseAgent(abc.ABC):
         (app/api/v1/endpoints/*.py); this is the same reasoning applied
         outside a FastAPI request context, not a new pattern."""
         raise NotImplementedError
+
+    async def persist_result(self, session: AsyncSession, organization_id: str, payload: dict, result: dict) -> None:
+        """Default no-op. A real bug, found and fixed in this same
+        change: before this hook existed, the six specialist agents
+        computed a correct result and handed it straight to the
+        Orchestrator, but never wrote it into the SAME
+        `*_prediction_logs` table their own HTTP endpoint
+        (app/api/v1/endpoints/*.py) already writes to on every direct
+        `/spam/predict`-style call -- meaning the manager dashboard
+        (app/services/dashboard_service.py, which reads exclusively from
+        those tables) was structurally blind to every email that went
+        through `POST /email/process` or the live mailbox poller, the
+        two paths this project actually wants used going forward. Each
+        specialist agent overrides this to call the exact same repository
+        method its own endpoint file calls, so the two intake paths write
+        identical audit rows. Called from handle_message with the SAME
+        session already open for AgentExecutionRepository -- no second
+        connection, and this write shares that transaction's lifetime."""
+        return None
 
     async def handle_message(self, raw: bytes) -> None:
         """The handler passed to messaging.consumer.consume_forever."""
@@ -83,6 +105,24 @@ class BaseAgent(abc.ABC):
             result, error_type, error_message = await self._execute_with_retry(
                 execution, event, repo, settings
             )
+
+            if error_message is None and result is not None:
+                # Best-effort, non-fatal -- same "an audit-log write must
+                # never turn a successful prediction into a failed one"
+                # stance every HTTP endpoint's own try/except around
+                # repository.log_prediction already takes (see e.g.
+                # app/api/v1/endpoints/spam.py). Consolidated here rather
+                # than repeated per agent: one place logs the failure
+                # consistently instead of six near-identical try/excepts.
+                organization_id = event.metadata.get("organization_id") or DEFAULT_ORGANIZATION_ID
+                try:
+                    await self.persist_result(session, organization_id, event.payload, result)
+                except Exception:
+                    logger.warning(
+                        "agent_persist_result_failed",
+                        exc_info=True,
+                        extra={"agent": self.agent_name, "job_id": str(event.job_id)},
+                    )
 
         if error_message is None:
             await publish_event(

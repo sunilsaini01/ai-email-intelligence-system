@@ -24,9 +24,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_dependency import get_current_user
 from app.database.repositories.summary_repository import SummaryRepository
 from app.database.session import DB_WRITE_TIMEOUT_SECONDS, get_db
 from app.models.feedback_event import ACTION_ACCEPT, ACTION_CORRECTION, ACTION_REJECT
+from app.models.user import User
 from app.schemas.summarization import (
     SummarizationFeedbackRequest,
     SummarizationFeedbackResponse,
@@ -45,6 +47,7 @@ logger = logging.getLogger("app.summarization")
 @router.post("/predict", response_model=SummarizationResponse)
 async def predict_summary(
     request: SummarizationRequest,
+    current_user: User = Depends(get_current_user),
     service: SummarizationService = Depends(get_summarization_service),
     db: AsyncSession = Depends(get_db),
 ) -> SummarizationResponse:
@@ -105,6 +108,7 @@ async def predict_summary(
                 entity_preservation_rate=result["entity_preservation_rate"],
                 model_version=result["model_version"],
                 processing_ms=result["processing_ms"],
+                organization_id=current_user.organization_id,
             ),
             timeout=DB_WRITE_TIMEOUT_SECONDS,
         )

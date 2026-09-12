@@ -21,8 +21,13 @@ class CategoryPredictionRepository:
         confidences: dict[str, float],
         model_version: str,
         processing_ms: float,
+        organization_id: str | None = None,
     ) -> CategoryPredictionLog:
+        # organization_id optional -- see spam_prediction_repository.py's
+        # identical parameter for the full rationale.
+        kwargs = {"organization_id": organization_id} if organization_id is not None else {}
         record = CategoryPredictionLog(
+            **kwargs,
             subject=subject,
             body=body,
             predicted_categories=categories,

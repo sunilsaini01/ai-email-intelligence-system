@@ -20,9 +20,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_dependency import get_current_user
 from app.database.repositories.category_prediction_repository import CategoryPredictionRepository
 from app.database.session import DB_WRITE_TIMEOUT_SECONDS, get_db
 from app.models.feedback_event import ACTION_CORRECTION
+from app.models.user import User
 from app.schemas.category import (
     CategoryFeedbackRequest,
     CategoryFeedbackResponse,
@@ -52,6 +54,7 @@ def _get_category_service() -> CategoryService:
 @router.post("/predict", response_model=CategoryPredictionResponse)
 async def predict_category(
     request: CategoryPredictionRequest,
+    current_user: User = Depends(get_current_user),
     service: CategoryService = Depends(_get_category_service),
     db: AsyncSession = Depends(get_db),
 ) -> CategoryPredictionResponse:
@@ -91,6 +94,7 @@ async def predict_category(
                 confidences=confidences,
                 model_version=result["model_version"],
                 processing_ms=result["processing_ms"],
+                organization_id=current_user.organization_id,
             ),
             timeout=DB_WRITE_TIMEOUT_SECONDS,
         )

@@ -28,8 +28,18 @@ class SpamPredictionRepository:
         threshold_used: float,
         model_version: str,
         processing_ms: float,
+        organization_id: str | None = None,
     ) -> SpamPredictionLog:
+        # organization_id optional (not required) so this repository's own
+        # unit tests that don't pass it keep working unchanged -- the
+        # model's own DEFAULT_ORGANIZATION_ID default still applies then.
+        # Both real callers (the /spam/predict endpoint and, as of this
+        # fix, the async SpamAgent) always pass the real one, derived from
+        # the authenticated caller / the workflow's own organization_id --
+        # never a value that could be spoofed.
+        kwargs = {"organization_id": organization_id} if organization_id is not None else {}
         record = SpamPredictionLog(
+            **kwargs,
             subject=subject,
             body=body,
             is_spam=is_spam,

@@ -502,7 +502,7 @@ trained on.
 **Watching the system run.** `prometheus_client` for collecting metrics,
 Grafana for dashboards, and Alertmanager for alerts.
 
-**Automated testing.** pytest and pytest-asyncio, with 629 tests passing
+**Automated testing.** pytest and pytest-asyncio, with 644 tests passing
 as of the last full run.
 
 **Infrastructure.** Docker and Docker Compose for local development, and
@@ -641,6 +641,28 @@ number — that's the standard held for every claim below.
   wasn't just the model agreeing with the rule by coincidence. Also fixed
   the same caller-supplied-organization-ID gap as the two phases above,
   this time in `/routing/predict` itself.
+- **Fixed: the dashboard was blind to anything processed through
+  `POST /email/process` or the mailbox poller.** Found by actually using
+  the running app end to end, not by reading code: the manager dashboard
+  reads exclusively from six per-module `*_prediction_logs` tables, which
+  previously were only ever written by the six DIRECT prediction
+  endpoints (`/spam/predict` and friends). The six Kafka agents that back
+  `POST /email/process` — the same pipeline the mailbox poller uses —
+  computed the same correct results and hung an `EmailRecord` on them,
+  but never wrote the per-module audit row the dashboard actually reads.
+  Every email submitted through the "real" intake path was invisible to
+  Overview, Email Volume, Categories, Sentiment, Priority, and Model
+  Quality — only the SLA page (which reads `emails` directly) would have
+  shown anything. Along the way, found the same issue this project has
+  now hit three times: none of the six direct endpoints derived
+  `organization_id` from the signed-in caller either, so even a
+  correctly-persisted row would have landed under the wrong organization
+  and stayed invisible to whoever actually submitted it. Both are fixed:
+  every agent now writes the same audit row its own endpoint would, and
+  every one of the twelve write paths (6 endpoints + 6 agents) uses the
+  caller's or workflow's real organization. Verified by submitting a real
+  email through `POST /email/process` against the running Docker stack
+  and watching the Overview page's zero become a one.
 
 **Planned:**
 
