@@ -2,55 +2,55 @@
     "comparison": [
         {
             "model": "logistic_regression",
-            "macro_f1": 0.4882,
-            "macro_precision": 0.4843,
-            "macro_recall": 0.5142,
-            "accuracy": 0.6758,
-            "critical_high_f1": 0.2871,
-            "critical_high_recall": 0.3588,
-            "critical_high_precision": 0.2528,
+            "macro_f1": 0.4235,
+            "macro_precision": 0.5028,
+            "macro_recall": 0.4097,
+            "accuracy": 0.6894,
+            "critical_high_f1": 0.1754,
+            "critical_high_recall": 0.119,
+            "critical_high_precision": 0.3333,
             "per_class_f1": {
-                "Low": 0.7962,
-                "Medium": 0.5825,
-                "High": 0.4891,
-                "Critical": 0.0851
+                "Low": 0.8099,
+                "Medium": 0.5331,
+                "High": 0.3509,
+                "Critical": 0.0
             },
             "per_class_recall": {
-                "Low": 0.8124,
-                "Medium": 0.527,
-                "High": 0.5357,
-                "Critical": 0.1818
+                "Low": 0.9403,
+                "Medium": 0.4603,
+                "High": 0.2381,
+                "Critical": 0.0
             },
             "per_class_precision": {
-                "Low": 0.7807,
-                "Medium": 0.651,
-                "High": 0.45,
-                "Critical": 0.0556
+                "Low": 0.7113,
+                "Medium": 0.6332,
+                "High": 0.6667,
+                "Critical": 0.0
             },
             "confusion_matrix": [
                 [
-                    381,
-                    64,
-                    11,
-                    13
+                    441,
+                    28,
+                    0,
+                    0
                 ],
                 [
-                    100,
-                    166,
-                    37,
-                    12
+                    163,
+                    145,
+                    7,
+                    0
                 ],
                 [
-                    6,
-                    24,
-                    45,
-                    9
+                    15,
+                    49,
+                    20,
+                    0
                 ],
                 [
-                    1,
                     1,
                     7,
-                    2
+                    3,
+                    0
                 ]
             ]
         },
@@ -110,29 +110,29 @@
         },
         {
             "model": "svm",
-            "macro_f1": 0.3522,
-            "macro_precision": 0.479,
-            "macro_recall": 0.3641,
-            "accuracy": 0.6792,
-            "critical_high_f1": 0.0337,
+            "macro_f1": 0.3505,
+            "macro_precision": 0.4529,
+            "macro_recall": 0.3625,
+            "accuracy": 0.6769,
+            "critical_high_f1": 0.0333,
             "critical_high_recall": 0.0179,
-            "critical_high_precision": 0.3,
+            "critical_high_precision": 0.25,
             "per_class_f1": {
-                "Low": 0.8109,
-                "Medium": 0.5305,
-                "High": 0.0674,
+                "Low": 0.8102,
+                "Medium": 0.5252,
+                "High": 0.0667,
                 "Critical": 0.0
             },
             "per_class_recall": {
                 "Low": 0.951,
-                "Medium": 0.4698,
+                "Medium": 0.4635,
                 "High": 0.0357,
                 "Critical": 0.0
             },
             "per_class_precision": {
-                "Low": 0.7068,
-                "Medium": 0.6091,
-                "High": 0.6,
+                "Low": 0.7057,
+                "Medium": 0.6058,
+                "High": 0.5,
                 "Critical": 0.0
             },
             "confusion_matrix": [
@@ -143,9 +143,9 @@
                     0
                 ],
                 [
-                    166,
-                    148,
-                    1,
+                    167,
+                    146,
+                    2,
                     0
                 ],
                 [
@@ -164,7 +164,7 @@
         }
     ],
     "best_model": "logistic_regression",
-    "model_version": "logistic_regression-20260820-141649",
+    "model_version": "logistic_regression-20260913-044247",
     "labels": [
         "Low",
         "Medium",
@@ -182,15 +182,15 @@
     "PRD_COMPLIANT": false,
     "warning": "Trained on data/processed/priority_synthetic_v1 (heuristic labels, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world priority classification quality. See docs/data_audit_priority.md and docs/model_cards/priority_classification.md.",
     "provenance": {
-        "mlflow_run_id": "affc20d3135e447db79744263b6752de",
+        "mlflow_run_id": null,
         "mlflow_model_name": "priority",
-        "mlflow_model_version": "1",
-        "mlflow_stage": "Production",
-        "git_commit": "32c136f5e2ad5d072ac2010b4ae6184dea6b4676",
+        "mlflow_model_version": null,
+        "mlflow_stage": null,
+        "git_commit": "58fc9ebddba1884632b8ea6c88fd62ade3ab4b8b",
         "dataset_version": "priority_synthetic_v1",
         "evidence_status": "synthetic_label",
-        "promoted_at": "2026-08-20T14:17:17.949479+00:00",
-        "promoted_by": "manual",
-        "rollback_of": null
+        "promoted_at": "2026-09-13T05:25:42.660783+00:00",
+        "promoted_by": "manual (Phase 22 calibration change - mlflow not installed in local dev venv, scripts/mlops/promote_model.py's formal MLflow-registry promotion was bypassed; artifact copied directly from artifacts/versions/, see docs/model_cards for the measured calibration comparison that motivated this retrain)",
+        "rollback_of": "logistic_regression-20260820-141649"
     }
 }

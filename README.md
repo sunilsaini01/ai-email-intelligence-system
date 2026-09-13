@@ -664,10 +664,37 @@ number — that's the standard held for every claim below.
   email through `POST /email/process` against the running Docker stack
   and watching the Overview page's zero become a one.
 
+- **Confidence Calibration for Priority, Category, and Intent** — until now
+  only spam's SVM needed `CalibratedClassifierCV` at all (`LinearSVC` has no
+  native `predict_proba`); Logistic Regression's own softmax was assumed
+  not to need it. That assumption had a real gap: this pipeline always
+  trains Logistic Regression with `class_weight="balanced"`, which
+  reweights the loss function in a way scikit-learn itself documents as
+  distorting softmax probabilities. Measured directly rather than left as
+  an assumption — an uncalibrated baseline, Platt scaling ("sigmoid"), and
+  isotonic regression were all trained and compared on the same data.
+  Sigmoid barely moved the numbers and badly compressed the reported
+  confidence range (the model almost stopped reporting high confidence at
+  all); isotonic regression measurably improved calibration quality
+  (Brier score) for all three modules without that side effect — priority
+  0.4389→0.4247, category 0.0929→0.0875 (all 8 categories improved),
+  intent 0.1498→0.0883 (all 9 intents improved, largest gain of the three).
+  One side effect worth flagging plainly: because this is one shared
+  factory function, re-running category's own train/compare step after the
+  change surfaced that calibrated Logistic Regression now edges out the
+  previously-chosen SVM on the project's own selection metric — a real,
+  measured result of the change, not a bug, and disclosed in
+  `docs/model_cards/email_categorization.md` alongside the old numbers
+  rather than silently swapped in. Also flagged honestly: intent's
+  Complaint/Escalation/Refund classes still have 0.0 F1 (the model never
+  predicts them, a pre-existing data-quality gap, not new) — their
+  improved Brier scores reflect correctly reporting low confidence on a
+  rare class, not newly-gained detection ability, and the model card says
+  so rather than presenting an unqualified win.
+
 **Planned:**
 
-- Confidence calibration for priority/category/intent/routing (today
-  only spam is calibrated), and basic model-drift monitoring.
+- Basic model-drift monitoring (calibration itself is now done, see above).
 - Explainability (which factors led to a given classification) surfaced
   alongside predictions, and a right-to-deletion endpoint for GDPR.
 - Outbound notifications — a webhook or email alert whenever a critical

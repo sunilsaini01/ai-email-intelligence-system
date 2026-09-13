@@ -2,23 +2,23 @@
     "comparison": [
         {
             "model": "logistic_regression",
-            "f1_micro": 0.467,
-            "f1_macro": 0.3891,
-            "f1_weighted": 0.5088,
-            "hamming_loss": 0.1786,
-            "precision_micro": 0.3968,
-            "recall_micro": 0.5674,
-            "subset_accuracy": 0.2344,
+            "f1_micro": 0.5212,
+            "f1_macro": 0.3573,
+            "f1_weighted": 0.4931,
+            "hamming_loss": 0.1098,
+            "precision_micro": 0.6533,
+            "recall_micro": 0.4335,
+            "subset_accuracy": 0.3959,
             "per_label_f1": {
-                "Complaint": 0.1421,
-                "Inquiry": 0.6201,
-                "Request": 0.5378,
-                "Feedback": 0.3765,
-                "Escalation": 0.0968,
-                "Order": 0.5637,
-                "Cancel": 0.4863,
+                "Complaint": 0.0,
+                "Inquiry": 0.6344,
+                "Request": 0.5,
+                "Feedback": 0.4,
+                "Escalation": 0.0,
+                "Order": 0.5316,
+                "Cancel": 0.487,
                 "Refund": 0.0,
-                "Schedule": 0.6788
+                "Schedule": 0.663
             }
         },
         {
@@ -65,7 +65,7 @@
         }
     ],
     "best_model": "logistic_regression",
-    "model_version": "logistic_regression-20260820-143043",
+    "model_version": "logistic_regression-20260913-051255",
     "labels": [
         "Complaint",
         "Inquiry",
@@ -85,15 +85,15 @@
     "PRD_COMPLIANT": false,
     "warning": "Trained on data/processed/intent_synthetic_v1 (heuristic multi-label tags, not human-annotated). These metrics validate the pipeline mechanically; they are not evidence of real-world intent-detection quality. See docs/data_audit_intent.md and docs/model_cards/intent.md.",
     "provenance": {
-        "mlflow_run_id": "157ba1c3fbf3439483036d7213c1df4f",
+        "mlflow_run_id": null,
         "mlflow_model_name": "intent",
-        "mlflow_model_version": "1",
-        "mlflow_stage": "Production",
-        "git_commit": "32c136f5e2ad5d072ac2010b4ae6184dea6b4676",
+        "mlflow_model_version": null,
+        "mlflow_stage": null,
+        "git_commit": "58fc9ebddba1884632b8ea6c88fd62ade3ab4b8b",
         "dataset_version": "intent_synthetic_v1",
         "evidence_status": "synthetic_label",
-        "promoted_at": "2026-08-20T14:31:06.990793+00:00",
-        "promoted_by": "manual",
-        "rollback_of": null
+        "promoted_at": "2026-09-13T05:25:42.660783+00:00",
+        "promoted_by": "manual (Phase 22 calibration change - mlflow not installed in local dev venv, scripts/mlops/promote_model.py's formal MLflow-registry promotion was bypassed; artifact copied directly from artifacts/versions/, see docs/model_cards for the measured calibration comparison that motivated this retrain)",
+        "rollback_of": "logistic_regression-20260820-143043"
     }
 }

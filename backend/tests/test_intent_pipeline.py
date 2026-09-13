@@ -11,33 +11,67 @@ from app.pipeline.pipeline_config import PipelineConfig
 
 VALID_LABELS = set(INTENT_LABELS)
 
+# 3+ examples per class -- Logistic Regression's CalibratedClassifierCV(cv=3)
+# (Phase 22) needs at least 3 positive examples of the rarest class or it
+# raises inside its One-vs-Rest sub-problem, not a pipeline bug (same
+# fixture-sizing note as test_category_pipeline.py and test_priority_pipeline.py).
 TRAIN_TEXTS = [
     "please cancel my subscription immediately",
+    "please cancel my account right away",
+    "i need to cancel this order today",
     "i want a refund for my last payment",
-    "please cancel and refund my order",
+    "please refund my last two charges",
+    "requesting a refund for the duplicate charge",
     "can you tell me the status of my order",
+    "when will my order ship out",
+    "please confirm my order was received",
     "does your product support single sign on",
     "i have a question about pricing",
+    "what plans do you offer for enterprise",
     "please escalate this to your manager now",
     "this is my third email please escalate",
+    "escalating this complaint to a supervisor",
     "are you available for a call next week",
     "can we schedule a meeting for tuesday",
+    "please schedule a demo for next month",
     "just wanted to share some positive feedback",
     "great job on the new release",
+    "leaving some feedback about the support team",
+    "this is extremely frustrating and unacceptable service",
+    "i am not happy with how this was handled",
+    "filing a complaint about the delayed response",
+    "please send me the updated invoice",
+    "requesting access to the shared drive",
+    "please process this request as soon as possible",
 ]
 TRAIN_LABELS = [
     ["Cancel"],
+    ["Cancel"],
+    ["Cancel"],
     ["Refund"],
-    ["Cancel", "Refund"],
+    ["Refund"],
+    ["Refund"],
+    ["Order"],
+    ["Order"],
     ["Order"],
     ["Inquiry"],
     ["Inquiry"],
+    ["Inquiry"],
+    ["Escalation"],
     ["Escalation"],
     ["Escalation"],
     ["Schedule"],
     ["Schedule"],
+    ["Schedule"],
     ["Feedback"],
     ["Feedback"],
+    ["Feedback"],
+    ["Complaint"],
+    ["Complaint"],
+    ["Complaint"],
+    ["Request"],
+    ["Request"],
+    ["Request"],
 ]
 
 
