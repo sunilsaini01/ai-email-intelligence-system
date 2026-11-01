@@ -19,6 +19,7 @@ from pathlib import Path
 
 from app.inference.category_classifier_backend import CategoryClassifierBackend
 from app.inference.category_predictor import CategoryPredictor
+from app.inference.explainability import explain_prediction
 from app.preprocessing.email_preprocessor import CATEGORY_CONFIG, EmailPreprocessor
 
 MODEL_FILENAME = "category_baseline.joblib"
@@ -111,6 +112,7 @@ class CategoryService:
             label_confidences = {"General": general_score}
 
         return {
+            "explanation": explain_prediction(self.predictor, record, list(labels)),
             "categories": [
                 {"category": label, "confidence": label_confidences[label]} for label in labels
             ],

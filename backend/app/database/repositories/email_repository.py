@@ -36,6 +36,9 @@ class EmailRepository:
         department: str | None,
         message_id: str | None = None,
         priority: str | None = None,
+        model_priority: str | None = None,
+        sentiment: str | None = None,
+        assigned_agent_id=None,
     ) -> tuple[EmailRecord, bool]:
         """Returns (record, was_created). Re-indexing the same content
         within one organization UPDATES the existing row (refreshed
@@ -62,6 +65,9 @@ class EmailRepository:
                 department=department,
                 message_id=message_id,
                 priority=priority,
+                model_priority=model_priority,
+                sentiment=sentiment,
+                assigned_agent_id=assigned_agent_id,
                 index_status=INDEX_STATUS_PENDING,
             )
             self.session.add(record)
@@ -75,6 +81,11 @@ class EmailRepository:
             record.department = department
             record.message_id = message_id or record.message_id
             record.priority = priority
+            record.model_priority = model_priority
+            record.sentiment = sentiment
+            # A re-index never un-assigns an email someone is already
+            # working on.
+            record.assigned_agent_id = record.assigned_agent_id or assigned_agent_id
             record.index_status = INDEX_STATUS_PENDING
             was_created = False
 

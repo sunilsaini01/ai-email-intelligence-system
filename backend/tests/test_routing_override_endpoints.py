@@ -166,7 +166,7 @@ class _FakeRoutingService:
     own module docstring already states, taken one step further: no real
     model call at all)."""
 
-    def route(self, subject: str, body: str, sender_email: str = "") -> dict:
+    def route(self, subject: str, body: str, sender_email: str = "", **_routing_context) -> dict:
         return {
             "department": "Support",
             "action": "auto_route",

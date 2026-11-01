@@ -32,6 +32,7 @@ def test_injected_instruction_text_is_treated_as_ordinary_content():
     assert isinstance(result["intents"], list)
     assert set(result.keys()) == {
         "intents", "all_scores", "entities", "model_version", "processing_ms",
+        "explanation",  # Phase 22: feature attributions only, never echoed text
     }
 
 

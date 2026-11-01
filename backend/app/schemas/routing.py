@@ -52,6 +52,10 @@ class RoutingPredictionResponse(BaseModel):
     upstream_failures: list[str] = Field(
         description="Names of upstream services that failed/were unavailable this call."
     )
+    priority_adjustment: dict | None = Field(
+        default=None,
+        description="FR-31/FR-17: model priority vs. sentiment/sender-history-adjusted priority, with reasons.",
+    )
     processing_ms: float
 
 
@@ -63,7 +67,7 @@ class RoutingFeedbackRequest(BaseModel):
     predicted_action: RoutingAction
     corrected_action: RoutingAction | None = None
     comment: str | None = None
-    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
+    reviewer_id: str | None = Field(default=None, description="Deprecated and ignored -- the reviewer is the signed-in user (FR-59).")
 
 
 class RoutingFeedbackResponse(BaseModel):

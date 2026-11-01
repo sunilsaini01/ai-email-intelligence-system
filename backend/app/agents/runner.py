@@ -57,7 +57,9 @@ from app.core.metrics import (
 )
 from app.core.token_encryption import TokenDecryptionError, decrypt_token, encrypt_token
 from app.database.repositories.mailbox_connection_repository import MailboxConnectionRepository
-from app.database.repositories.mailbox_ingested_message_repository import MailboxIngestedMessageRepository
+from app.database.repositories.mailbox_ingested_message_repository import (
+    MailboxIngestedMessageRepository,
+)
 from app.database.repositories.workflow_execution_repository import WorkflowExecutionRepository
 from app.database.session import AsyncSessionLocal
 from app.ingestion.mailbox_provider import MailboxAuthorizationError, MailboxProviderError
@@ -67,6 +69,7 @@ from app.messaging.consumer import build_consumer, consume_forever
 from app.messaging.producer import start_producer, stop_producer
 from app.messaging.topic_admin import ensure_topics_exist
 from app.models.mailbox_connection import STATUS_ACTIVE, MailboxConnection
+from app.services import scheduled_jobs
 from app.services.email_intake_service import EmailDispatchFailed, dispatch_email_for_processing
 
 logger = logging.getLogger("app.agents.runner")
@@ -271,6 +274,19 @@ async def _run_mailbox_poll() -> None:
         await asyncio.sleep(settings.MAILBOX_POLL_INTERVAL_SECONDS)
 
 
+async def _run_periodic(name: str, job, interval_seconds: int) -> None:
+    """Phase 22: generic loop for app/services/scheduled_jobs.py -- one
+    session per pass, failures logged and retried next interval, same
+    stance as _run_stuck_workflow_check above."""
+    while True:
+        try:
+            async with AsyncSessionLocal() as session:
+                await job(session)
+        except Exception:
+            logger.error(f"{name}_failed", exc_info=True)
+        await asyncio.sleep(interval_seconds)
+
+
 async def main() -> None:
     setup_logging()
     settings = get_settings()
@@ -283,6 +299,14 @@ async def main() -> None:
     tasks.append(asyncio.create_task(_run_orchestrator()))
     tasks.append(asyncio.create_task(_run_stuck_workflow_check()))
     tasks.append(asyncio.create_task(_run_mailbox_poll()))
+    for name, job, interval in (
+        ("sla_sweep", scheduled_jobs.sla_sweep, settings.SLA_SWEEP_INTERVAL_SECONDS),
+        ("drift_check", scheduled_jobs.drift_check, settings.DRIFT_CHECK_INTERVAL_SECONDS),
+        ("retraining", scheduled_jobs.run_retraining, settings.RETRAINING_POLL_INTERVAL_SECONDS),
+        ("weekly_reports", scheduled_jobs.generate_weekly_reports, settings.REPORT_CHECK_INTERVAL_SECONDS),
+        ("retention_purge", scheduled_jobs.purge_retention, settings.RETENTION_PURGE_INTERVAL_SECONDS),
+    ):
+        tasks.append(asyncio.create_task(_run_periodic(name, job, interval)))
 
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()

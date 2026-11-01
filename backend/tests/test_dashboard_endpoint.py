@@ -14,7 +14,7 @@ from app.database.session import Base, get_db
 from app.main import create_app
 from app.models.feedback_event import FeedbackEvent
 from app.models.priority_prediction_log import PriorityPredictionLog
-from tests.conftest import override_auth
+from tests.conftest import TEST_USER_ID, override_auth, override_manager_auth
 
 
 @pytest_asyncio.fixture
@@ -36,6 +36,20 @@ def client(session_factory):
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
     override_auth(app)
+    return TestClient(app)
+
+
+@pytest.fixture
+def manager_client(session_factory):
+    """Phase 22: report export is manager-or-admin (PRD SS6.4 RBAC)."""
+
+    async def override_get_db():
+        async with session_factory() as session:
+            yield session
+
+    app = create_app()
+    app.dependency_overrides[get_db] = override_get_db
+    override_manager_auth(app)
     return TestClient(app)
 
 
@@ -78,20 +92,20 @@ def test_review_queue_is_empty_on_a_fresh_database(client):
     assert response.json()["items"] == []
 
 
-def test_reports_export_rejects_unknown_format(client):
-    response = client.get("/api/v1/dashboard/reports/export", params={"format": "xml"})
+def test_reports_export_rejects_unknown_format(manager_client):
+    response = manager_client.get("/api/v1/dashboard/reports/export", params={"format": "xml"})
     assert response.status_code == 422
 
 
-def test_reports_export_csv_returns_csv_content_type(client):
-    response = client.get("/api/v1/dashboard/reports/export", params={"format": "csv"})
+def test_reports_export_csv_returns_csv_content_type(manager_client):
+    response = manager_client.get("/api/v1/dashboard/reports/export", params={"format": "csv"})
     assert response.status_code == 200
     assert "text/csv" in response.headers["content-type"]
     assert b"Overview" in response.content
 
 
-def test_reports_export_pdf_returns_pdf_bytes(client):
-    response = client.get("/api/v1/dashboard/reports/export", params={"format": "pdf"})
+def test_reports_export_pdf_returns_pdf_bytes(manager_client):
+    response = manager_client.get("/api/v1/dashboard/reports/export", params={"format": "pdf"})
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF")
@@ -118,7 +132,9 @@ async def test_confirm_review_item_writes_a_feedback_event(client, session_facto
         result = await session.execute(select(FeedbackEvent).where(FeedbackEvent.prediction_id == prediction_id))
         event = result.scalar_one()
         assert event.action == "CONFIRM"
-        assert event.reviewer_id == "agent_1"
+        # Phase 22 (FR-59): the reviewer is the signed-in user, not the
+        # caller-supplied reviewer_id.
+        assert event.reviewer_id == str(TEST_USER_ID)
 
 
 @pytest.mark.asyncio

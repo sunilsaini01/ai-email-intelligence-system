@@ -16,6 +16,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+from app.inference.explainability import explain_prediction
 from app.inference.intent_classifier_backend import IntentClassifierBackend
 from app.inference.intent_predictor import IntentPredictor
 from app.nlp.intent_entities import extract_intent_entities
@@ -82,6 +83,7 @@ class IntentService:
         entities = extract_intent_entities(raw_combined)
 
         return {
+            "explanation": explain_prediction(self.predictor, cleaned, list(result.labels)),
             "intents": [
                 {"intent": label, "confidence": result.label_confidences[label]}
                 for label in result.labels

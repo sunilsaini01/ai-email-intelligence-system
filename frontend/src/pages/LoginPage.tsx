@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { ApiError } from "../api/client";
 
@@ -52,6 +52,10 @@ export function LoginPage() {
         <button type="submit" className="preset-btn preset-btn--active" disabled={isSubmitting}>
           {isSubmitting ? "Signing in…" : "Sign in"}
         </button>
+        <p className="page-note">
+          New here? <Link to="/signup">Create an organization</Link>. Joining a team? Use the invitation link your
+          admin gave you.
+        </p>
       </form>
     </div>
   );

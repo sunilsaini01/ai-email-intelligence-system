@@ -34,12 +34,15 @@ app/ingestion/oauth_state.py).
 from fastapi import APIRouter, Depends
 
 from app.api.v1.endpoints import (
+    admin,
     auth,
     category,
     dashboard,
     health,
     intent,
     mailbox,
+    models,
+    notifications,
     priority,
     reply,
     retrieval,
@@ -55,6 +58,10 @@ api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(mailbox.callback_router)
+# The dashboard live-update socket authenticates itself (a WebSocket can't
+# carry the Authorization header protected_router's dependency reads) --
+# see app/api/v1/endpoints/dashboard.py's ws_router.
+api_router.include_router(dashboard.ws_router)
 
 protected_router = APIRouter(dependencies=[Depends(get_current_user)])
 protected_router.include_router(spam.router)
@@ -69,4 +76,7 @@ protected_router.include_router(reply.router)
 protected_router.include_router(dashboard.router)
 protected_router.include_router(workflows.router)
 protected_router.include_router(mailbox.router)
+protected_router.include_router(admin.router)
+protected_router.include_router(notifications.router)
+protected_router.include_router(models.router)
 api_router.include_router(protected_router)

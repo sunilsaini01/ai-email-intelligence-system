@@ -36,8 +36,9 @@ class CategoryPredictionRequest(BaseModel):
 
 
 class CategoryScore(BaseModel):
-    category: str
+    category: str  # the organization's display name (FR-23) -- the model label unless renamed
     confidence: float
+    label: str | None = None  # the model's own label, for feedback/routing
 
 
 class CategoryPredictionResponse(BaseModel):
@@ -45,6 +46,7 @@ class CategoryPredictionResponse(BaseModel):
     all_scores: dict[str, float]  # full distribution over all 8 taxonomy labels
     model_version: str
     processing_ms: float
+    explanation: dict | None = None  # PRD SS6.5 -- see app/inference/explainability.py
 
 
 class CategoryFeedbackRequest(BaseModel):
@@ -53,7 +55,7 @@ class CategoryFeedbackRequest(BaseModel):
     predicted_categories: list[str]
     corrected_categories: list[str]
     comment: str | None = None
-    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
+    reviewer_id: str | None = Field(default=None, description="Deprecated and ignored -- the reviewer is the signed-in user (FR-59).")
 
 
 class CategoryFeedbackResponse(BaseModel):

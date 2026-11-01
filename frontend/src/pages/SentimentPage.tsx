@@ -3,6 +3,49 @@ import { useSentiment } from "../hooks/useDashboardData";
 import { QueryState } from "../components/QueryState";
 import { EvidenceBadge } from "../components/EvidenceBadge";
 import { SimpleBarChart } from "../charts/SimpleBarChart";
+import { useSenderTrends } from "../hooks/useAdmin";
+
+// FR-32: per-sender trends, escalation candidates first.
+function SenderTrends() {
+  const query = useSenderTrends();
+  return (
+    <section className="admin-section">
+      <h3>Sender sentiment trends (FR-32)</h3>
+      <QueryState query={query}>
+        {(data) =>
+          data.senders.length === 0 ? (
+            <div className="state-message">Not enough repeat senders in the last {data.window_days} days yet.</div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Sender</th>
+                  <th>Emails</th>
+                  <th>Negative</th>
+                  <th>Recent avg (−2…+2)</th>
+                  <th>Trend</th>
+                  <th>Escalate?</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.senders.map((s) => (
+                  <tr key={s.sender_email}>
+                    <td>{s.sender_email}</td>
+                    <td>{s.email_count}</td>
+                    <td>{s.negative_count}</td>
+                    <td>{s.recent_average_score.toFixed(2)}</td>
+                    <td>{s.trend}</td>
+                    <td>{s.escalation_candidate ? "⚠ yes" : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        }
+      </QueryState>
+    </section>
+  );
+}
 
 export function SentimentPage() {
   const { range, organizationId } = useDashboardFilters();
@@ -30,6 +73,7 @@ export function SentimentPage() {
           );
         }}
       </QueryState>
+      <SenderTrends />
     </div>
   );
 }

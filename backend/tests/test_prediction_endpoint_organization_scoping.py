@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.auth_dependency import get_current_user
 from app.database.session import Base, get_db
 from app.main import create_app
-from app.models.user import ROLE_MEMBER, User
+from app.models.user import ROLE_AGENT, User
 from app.services.category_service import _DEFAULT_ARTIFACT_DIR as CATEGORY_DIR
 from app.services.intent_service import _DEFAULT_ARTIFACT_DIR as INTENT_DIR
 from app.services.priority_service import _DEFAULT_ARTIFACT_DIR as PRIORITY_DIR
@@ -68,7 +68,7 @@ def acme_client(session_factory):
             email="member@acme.example.com",
             hashed_password="unused",
             organization_id="acme",
-            role=ROLE_MEMBER,
+            role=ROLE_AGENT,
             is_active=True,
             created_at=datetime.now(UTC),
         )

@@ -84,6 +84,16 @@ class EmailRecord(Base):
 
     resolution_status: Mapped[str] = mapped_column(String(20), default=DEFAULT_RESOLUTION_STATUS)
 
+    # FR-42: the agent this email was assigned to inside its routed
+    # department (round-robin or skills-based) -- NULL when no eligible
+    # agent exists or assignment is turned off for the organization.
+    assigned_agent_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    # FR-31/FR-17: the model's own priority before sentiment/sender-history
+    # adjustment; `priority` above holds the adjusted value every
+    # consumer (SLA, notifications) acts on.
+    model_priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    sentiment: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     index_status: Mapped[str] = mapped_column(String(20), default=INDEX_STATUS_PENDING)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     embedding_version: Mapped[str | None] = mapped_column(String(100), nullable=True)

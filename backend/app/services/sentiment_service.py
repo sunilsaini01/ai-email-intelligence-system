@@ -19,9 +19,22 @@ from functools import lru_cache
 
 from app.inference.sentiment_classifier_backend import SentimentClassifierBackend
 from app.inference.sentiment_predictor import VaderSentimentPredictor
+from app.nlp.emotion_detector import EMOTION_DETECTOR_VERSION, detect_emotions
 from app.preprocessing.email_preprocessor import SENTIMENT_CONFIG, EmailPreprocessor
 
 MODEL_VERSION = "vader-lexicon-3.3.2"
+
+# The backend Protocol only exposes the bucketed label, not VADER's raw
+# compound score, so the emotion detector gets a representative compound
+# per bucket -- it only uses it to separate clearly-positive from
+# clearly-negative text, which the bucket already decides.
+_LABEL_TO_COMPOUND = {
+    "Very Negative": -0.8,
+    "Negative": -0.3,
+    "Neutral": 0.0,
+    "Positive": 0.3,
+    "Very Positive": 0.8,
+}
 
 
 class SentimentService:
@@ -44,10 +57,18 @@ class SentimentService:
 
         result = self.predictor.predict(text)
 
+        # FR-30: scored on the RAW text, not the preprocessed one -- shouted
+        # capitals and repeated '!'/'?' are emotion signal that
+        # normalization would erase.
+        emotions = detect_emotions(f"{subject} {body or ''}", compound=_LABEL_TO_COMPOUND.get(result.label))
+
         return {
             "sentiment": result.label,
             "confidence": result.confidence,
             "probabilities": result.probabilities,
+            "primary_emotion": emotions.primary_emotion,
+            "emotions": emotions.ranked(),
+            "emotion_model_version": EMOTION_DETECTOR_VERSION,
             "model_version": MODEL_VERSION,
             "processing_ms": result.processing_ms,
         }

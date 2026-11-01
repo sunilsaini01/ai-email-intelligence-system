@@ -34,6 +34,7 @@ from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.mlops.feedback_training_data import feedback_enabled, feedback_training_frame
 from app.data.pipeline_metadata import PipelineRun
 from app.data_ingestion.checksum_utils import verify_checksum
 from app.data_ingestion.enron_loader import load_enron_kaggle
@@ -344,6 +345,17 @@ def main():
     train_df, val_df, test_df = split_dataset(df)
     run.log_step("split_dataset", {"train": len(train_df), "val": len(val_df), "test": len(test_df)})
 
+    # FR-61: reviewer corrections join the TRAIN split only (after the
+    # split, so none can leak into val/test), and only when the retraining
+    # runner asks for it -- see app/mlops/feedback_training_data.py.
+    feedback_df = feedback_training_frame("spam") if feedback_enabled() else pd.DataFrame()
+    feedback_rows_added = 0
+    if not feedback_df.empty:
+        feedback_df = clean_dataset(feedback_df)
+        feedback_rows_added = len(feedback_df)
+        train_df = pd.concat([train_df, feedback_df], ignore_index=True)
+        run.log_step("feedback_corrections", {"rows_added": feedback_rows_added})
+
     results, trained, mlflow_run_ids = train_and_evaluate(train_df, val_df, test_df)
     run.log_step("train_and_evaluate", {"models_compared": [r["model"] for r in results]})
 
@@ -424,6 +436,7 @@ def main():
         "recall_target": RECALL_TARGET,
         "meets_target": meets_target,
         "train_size": len(train_df),
+        "feedback_rows_added": feedback_rows_added,
         "val_size": len(val_df),
         "test_size": len(test_df),
     }

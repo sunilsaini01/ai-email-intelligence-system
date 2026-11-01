@@ -152,3 +152,43 @@ groups:
           fr: "FR-72"
         annotations:
           summary: "Spam correction volume elevated over the last hour (placeholder threshold, no validated baseline)"
+
+  - name: fr72_model_drift
+    rules:
+      - alert: ModelPredictionDrift
+        # PSI > 0.25 is the standard "significant shift" reading; computed
+        # hourly by the agents process (app/mlops/drift.py). -1 means not
+        # enough data, which the `> 0.25` comparison already excludes.
+        expr: model_prediction_drift_psi > 0.25
+        for: 1h
+        labels:
+          severity: warning
+          fr: "FR-72"
+        annotations:
+          summary: "Prediction distribution drift on {{ $labels.module }} (PSI {{ $value }})"
+          description: >
+            Last 7 days' predicted-label distribution differs significantly
+            from the 28 days before. Check the Model Quality page's drift
+            panel and recent input changes before deciding to retrain.
+      - alert: ModelCorrectionRateDrift
+        # PRD SS14.4: "alert if rolling 7-day model accuracy drops > 5%
+        # from baseline" -- correction rate is the accuracy proxy (FR-62).
+        expr: >
+          (model_feedback_correction_rate{window="current"} >= 0)
+          - on(module) (model_feedback_correction_rate{window="baseline"} >= 0) > 0.05
+        for: 1h
+        labels:
+          severity: warning
+          fr: "FR-72"
+        annotations:
+          summary: "Correction rate on {{ $labels.module }} up more than 5 points vs. baseline"
+
+  - name: sla
+    rules:
+      - alert: SlaBreachesOpen
+        expr: sla_open_emails{state="breached"} > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} unresolved emails have breached their SLA"

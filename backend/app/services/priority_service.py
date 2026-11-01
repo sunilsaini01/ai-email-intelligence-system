@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
+from app.inference.explainability import explain_prediction
 from app.inference.priority_classifier_backend import PriorityClassifierBackend
 from app.inference.priority_predictor import PriorityPredictor
 from app.preprocessing.email_preprocessor import PRIORITY_CONFIG, EmailPreprocessor
@@ -103,6 +104,7 @@ class PriorityService:
         result = self.predictor.predict(record)
 
         return {
+            "explanation": explain_prediction(self.predictor, record, result.label),
             "priority": result.label,
             "confidence": result.confidence,
             "probabilities": result.probabilities,

@@ -17,6 +17,10 @@ class ReplyGenerateRequest(BaseModel):
     sender_email: str = Field(default="")
     category: str | None = Field(default=None, description="Caller-supplied snapshot, e.g. from /categorization/predict.")
     department: str | None = Field(default=None, description="Caller-supplied snapshot, e.g. from /routing/predict.")
+    intents: list[str] | None = Field(
+        default=None,
+        description="FR-36: caller-supplied intents (e.g. from /intent/predict). Detected automatically when omitted.",
+    )
     source_email_id: uuid.UUID | None = Field(
         default=None, description="If this email is already a canonical EmailRecord (Phase 9). Not required."
     )
@@ -61,18 +65,18 @@ class ReplyDraftListResponse(BaseModel):
 
 class ReplyEditRequest(BaseModel):
     edited_text: str = Field(..., min_length=1)
-    reviewer_id: str | None = Field(default=None, description="No real auth yet -- caller-supplied, not verified.")
+    reviewer_id: str | None = Field(default=None, description="Deprecated and ignored -- the reviewer is the signed-in user (FR-59).")
 
 
 class ReplyReviewActionRequest(BaseModel):
-    reviewer_id: str | None = Field(default=None, description="No real auth yet -- caller-supplied, not verified.")
+    reviewer_id: str | None = Field(default=None, description="Deprecated and ignored -- the reviewer is the signed-in user (FR-59).")
 
 
 class ReplyFeedbackRequest(BaseModel):
     draft_id: uuid.UUID
     useful: bool = Field(description="Was this draft a genuinely useful starting point?")
     comment: str | None = None
-    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
+    reviewer_id: str | None = Field(default=None, description="Deprecated and ignored -- the reviewer is the signed-in user (FR-59).")
 
 
 class ReplyFeedbackResponse(BaseModel):

@@ -101,7 +101,9 @@ async def predict_spam(
                 subject=request.subject,
                 body=request.body,
                 organization_id=current_user.organization_id,
-                **result,
+                # The explanation is response-only -- the audit table has
+                # no column for it.
+                **{k: v for k, v in result.items() if k != "explanation"},
             ),
             timeout=DB_WRITE_TIMEOUT_SECONDS,
         )
@@ -114,6 +116,7 @@ async def predict_spam(
 @router.post("/feedback", response_model=SpamFeedbackResponse)
 async def submit_spam_feedback(
     request: SpamFeedbackRequest,
+    current_user: User = Depends(get_current_user),
     feedback_logger: FeedbackLogger = Depends(get_feedback_logger),
     db: AsyncSession = Depends(get_db),
 ) -> SpamFeedbackResponse:
@@ -136,7 +139,8 @@ async def submit_spam_feedback(
             action=ACTION_CORRECTION,
             original_value=request.predicted_label,
             corrected_value=request.corrected_label,
-            reviewer_id=request.reviewer_id,
+            organization_id=current_user.organization_id,
+            reviewer_id=str(current_user.id),
             reason=request.comment,
         )
     except Exception:

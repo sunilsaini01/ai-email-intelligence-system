@@ -88,7 +88,7 @@ class SummarizationFeedbackRequest(BaseModel):
     corrected_summary: str | None = None
     quality_score: int | None = Field(default=None, ge=1, le=5)
     reason: str | None = None
-    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
+    reviewer_id: str | None = Field(default=None, description="Deprecated and ignored -- the reviewer is the signed-in user (FR-59).")
 
 
 class SummarizationFeedbackResponse(BaseModel):

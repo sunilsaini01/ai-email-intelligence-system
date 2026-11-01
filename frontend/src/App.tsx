@@ -14,6 +14,8 @@ import { ReplyDraftsPage } from "./pages/ReplyDraftsPage";
 import { RoutingRulesPage } from "./pages/RoutingRulesPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { LoginPage } from "./pages/LoginPage";
+import { AdminPage } from "./pages/AdminPage";
+import { AcceptInvitationPage, CreateOrganizationPage } from "./pages/SignupPages";
 import { useDashboardWebSocket } from "./hooks/useDashboardWebSocket";
 import { useAuth } from "./hooks/useAuth";
 
@@ -51,6 +53,7 @@ function DashboardRoutes() {
         <Route path="reply-drafts" element={<ReplyDraftsPage />} />
         <Route path="routing-rules" element={<RoutingRulesPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="admin" element={<AdminPage />} />
       </Route>
     </Routes>
   );
@@ -60,6 +63,8 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<CreateOrganizationPage />} />
+      <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
       <Route
         path="/*"
         element={

@@ -94,6 +94,7 @@ async def predict_intent(
 @router.post("/feedback", response_model=IntentFeedbackResponse)
 async def submit_intent_feedback(
     request: IntentFeedbackRequest,
+    current_user: User = Depends(get_current_user),
     feedback_logger: FeedbackLogger = Depends(get_intent_feedback_logger),
     db: AsyncSession = Depends(get_db),
 ) -> IntentFeedbackResponse:
@@ -112,7 +113,8 @@ async def submit_intent_feedback(
             action=ACTION_CORRECTION,
             original_value=request.predicted_label,
             corrected_value=request.corrected_label,
-            reviewer_id=request.reviewer_id,
+            organization_id=current_user.organization_id,
+            reviewer_id=str(current_user.id),
             reason=request.comment,
         )
     except Exception:

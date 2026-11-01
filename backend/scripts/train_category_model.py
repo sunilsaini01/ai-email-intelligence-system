@@ -34,6 +34,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.mlops.feedback_training_data import augment_training_frame
 from app.evaluation.model_evaluator import evaluate_multilabel_model
 from app.mlops.model_metadata import MODULE_EVIDENCE_STATUS
 from app.pipeline.category_pipeline import CategoryMLPipeline
@@ -159,6 +160,9 @@ def main():
     preprocessor = EmailPreprocessor(CATEGORY_CONFIG)
 
     train_df = load_split("train")
+    # FR-61: reviewer corrections join the TRAIN split only, and only when
+    # the retraining runner asks for it -- see app/mlops/feedback_training_data.py.
+    train_df, feedback_rows_added = augment_training_frame(train_df, "category")
     test_df = load_split("test")
 
     train_records = clean_and_build_records(train_df, preprocessor)
@@ -212,6 +216,7 @@ def main():
         "f1_micro_target": f1_micro_target,
         "meets_f1_micro_target": bool(best_result["f1_micro"] >= f1_micro_target),
         "train_size": len(train_df),
+        "feedback_rows_added": feedback_rows_added,
         "test_size": len(test_df),
         "SYNTHETIC_DATA": True,
         "PRD_COMPLIANT": False,

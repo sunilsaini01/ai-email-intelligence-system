@@ -36,8 +36,10 @@ from app.services.category_service import (
     CategoryServiceUnavailable,
     get_category_service,
 )
+from app.services.category_taxonomy import apply_display_taxonomy
 from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_category_feedback_logger
+from app.services.organization_settings_service import get_org_settings
 
 router = APIRouter(prefix="/categorization", tags=["Email Categorization"])
 
@@ -101,12 +103,22 @@ async def predict_category(
     except Exception:
         logger.warning("category_prediction_log_failed", exc_info=True)
 
+    # FR-23: the organization's taxonomy (renames/disabled labels) is a
+    # presentation layer over the model's fixed label set -- applied after
+    # the audit row above, which keeps recording what the model said.
+    try:
+        org_settings = await get_org_settings(db, current_user.organization_id)
+        result = apply_display_taxonomy(result, org_settings["category_taxonomy"])
+    except Exception:
+        logger.warning("category_taxonomy_apply_failed", exc_info=True)
+
     return CategoryPredictionResponse(**result)
 
 
 @router.post("/feedback", response_model=CategoryFeedbackResponse)
 async def submit_category_feedback(
     request: CategoryFeedbackRequest,
+    current_user: User = Depends(get_current_user),
     feedback_logger: FeedbackLogger = Depends(get_category_feedback_logger),
     db: AsyncSession = Depends(get_db),
 ) -> CategoryFeedbackResponse:
@@ -125,7 +137,8 @@ async def submit_category_feedback(
             action=ACTION_CORRECTION,
             original_value=request.predicted_categories,
             corrected_value=request.corrected_categories,
-            reviewer_id=request.reviewer_id,
+            organization_id=current_user.organization_id,
+            reviewer_id=str(current_user.id),
             reason=request.comment,
         )
     except Exception:

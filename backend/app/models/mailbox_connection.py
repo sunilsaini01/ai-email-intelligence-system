@@ -37,7 +37,11 @@ from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
 
 PROVIDER_GMAIL = "gmail"
 PROVIDER_OUTLOOK = "outlook"
-MAILBOX_PROVIDERS = (PROVIDER_GMAIL, PROVIDER_OUTLOOK)
+# Phase 22 (FR-01): credential-based IMAP for every other mail server --
+# see app/ingestion/imap_provider.py.
+PROVIDER_IMAP = "imap"
+OAUTH_MAILBOX_PROVIDERS = (PROVIDER_GMAIL, PROVIDER_OUTLOOK)
+MAILBOX_PROVIDERS = (*OAUTH_MAILBOX_PROVIDERS, PROVIDER_IMAP)
 
 STATUS_ACTIVE = "active"  # noqa: S105 -- a connection lifecycle state, not a credential
 STATUS_ERROR = "error"

@@ -41,10 +41,25 @@ def client(session_factory):
     return TestClient(app)
 
 
-def _register(client, email="user@example.com", password="correct-horse-battery", organization_id="acme"):
+def _register(client, email="user@example.com", password="correct-horse-battery", organization_name="Acme"):
+    """Public signup -- always creates a NEW organization (membership
+    security fix); joining an existing one needs an invitation."""
     return client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": password, "organization_id": organization_id},
+        json={"email": email, "password": password, "organization_name": organization_name},
+    )
+
+
+def _invite_and_accept(client, admin_token, email, role="agent", password="correct-horse-battery"):
+    invitation = client.post(
+        "/api/v1/admin/invitations",
+        json={"email": email, "role": role},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert invitation.status_code == 201, invitation.text
+    return client.post(
+        "/api/v1/auth/invitations/accept",
+        json={"token": invitation.json()["token"], "email": email, "password": password},
     )
 
 
@@ -58,7 +73,7 @@ def test_register_creates_a_user_and_hashes_the_password(client):
     assert response.status_code == 201
     body = response.json()
     assert body["email"] == "user@example.com"
-    assert body["organization_id"] == "acme"
+    assert body["organization_id"].startswith("org_")  # server-generated
     assert "password" not in body
     assert "hashed_password" not in body
 
@@ -72,7 +87,7 @@ def test_register_rejects_duplicate_email(client):
 def test_register_rejects_short_password(client):
     response = client.post(
         "/api/v1/auth/register",
-        json={"email": "short@example.com", "password": "short", "organization_id": "acme"},
+        json={"email": "short@example.com", "password": "short", "organization_name": "Acme"},
     )
     assert response.status_code == 422
 
@@ -138,37 +153,40 @@ def test_health_endpoint_requires_no_token(client):
 
 
 def test_me_returns_the_authenticated_users_own_identity(client):
-    _register(client, email="me@example.com", organization_id="acme")
+    org_id = _register(client, email="me@example.com").json()["organization_id"]
     token = _login(client, email="me@example.com").json()["access_token"]
 
     response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     body = response.json()
     assert body["email"] == "me@example.com"
-    assert body["organization_id"] == "acme"
+    assert body["organization_id"] == org_id
 
 
 # --- Phase 19: role-based authorization -------------------------------
 
 
-def test_the_first_user_registered_for_an_organization_becomes_its_admin(client):
-    response = _register(client, email="founder@acme.com", organization_id="acme")
+def test_the_organization_creator_becomes_its_admin(client):
+    response = _register(client, email="founder@acme.com")
     assert response.json()["role"] == "admin"
 
 
-def test_the_second_user_registered_for_the_same_organization_is_a_member(client):
-    _register(client, email="founder@acme.com", organization_id="acme")
-    second = _register(client, email="teammate@acme.com", organization_id="acme")
-    assert second.json()["role"] == "member"
+def test_an_invited_teammate_gets_the_invited_role_in_the_inviters_organization(client):
+    founder = _register(client, email="founder@acme.com").json()
+    admin_token = _login(client, email="founder@acme.com").json()["access_token"]
+    teammate = _invite_and_accept(client, admin_token, "teammate@acme.com")
+    assert teammate.status_code == 201
+    assert teammate.json()["role"] == "agent"
+    assert teammate.json()["organization_id"] == founder["organization_id"]
 
 
-def test_the_first_user_in_a_different_organization_also_becomes_admin(client):
-    """Admin bootstrapping is per-organization, not global -- the FIRST
-    account for organization "acme" being an admin says nothing about
-    "widgets-inc", which has no accounts yet either."""
-    _register(client, email="founder@acme.com", organization_id="acme")
-    other_org_founder = _register(client, email="founder@widgets-inc.com", organization_id="widgets-inc")
-    assert other_org_founder.json()["role"] == "admin"
+def test_each_signup_creates_a_separate_organization(client):
+    """Two signups naming the same organization still get two different,
+    server-generated organizations -- a name never grants membership."""
+    first = _register(client, email="founder@acme.com", organization_name="Acme").json()
+    second = _register(client, email="other@acme.com", organization_name="Acme").json()
+    assert first["organization_id"] != second["organization_id"]
+    assert second["role"] == "admin"
 
 
 def test_an_admin_gated_endpoint_rejects_a_member_and_allows_an_admin(client, monkeypatch):
@@ -185,9 +203,9 @@ def test_an_admin_gated_endpoint_rejects_a_member_and_allows_an_admin(client, mo
 
     monkeypatch.setattr("app.api.v1.endpoints.mailbox.build_provider", lambda provider: FakeMailboxProvider())
 
-    _register(client, email="founder@acme.com", organization_id="acme")
+    _register(client, email="founder@acme.com")
     admin_token = _login(client, email="founder@acme.com").json()["access_token"]
-    _register(client, email="agent@acme.com", organization_id="acme")
+    _invite_and_accept(client, admin_token, "agent@acme.com")
     member_token = _login(client, email="agent@acme.com").json()["access_token"]
 
     member_response = client.get("/api/v1/mailbox/gmail/connect", headers={"Authorization": f"Bearer {member_token}"})

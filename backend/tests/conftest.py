@@ -29,11 +29,12 @@ from fastapi.testclient import TestClient
 
 from app.core.auth_dependency import get_current_user, require_admin
 from app.main import create_app
-from app.models.user import ROLE_ADMIN, ROLE_MEMBER, User
+from app.models.user import ROLE_ADMIN, ROLE_AGENT, ROLE_MANAGER, User
 from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
 
 TEST_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 TEST_ADMIN_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
+TEST_MANAGER_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000003")
 
 
 def _fake_current_user() -> User:
@@ -42,7 +43,7 @@ def _fake_current_user() -> User:
         email="test-fixture@example.com",
         hashed_password="unused",
         organization_id=DEFAULT_ORGANIZATION_ID,
-        role=ROLE_MEMBER,
+        role=ROLE_AGENT,
         is_active=True,
         created_at=datetime.now(UTC),
     )
@@ -51,7 +52,7 @@ def _fake_current_user() -> User:
 def _fake_admin_user() -> User:
     """Phase 19 (role-based authorization). Deliberately a SEPARATE
     fixture from _fake_current_user, not a role swap on the same one:
-    _fake_current_user's role=ROLE_MEMBER is the safer default for every
+    _fake_current_user's role=ROLE_AGENT is the safer default for every
     test that doesn't care about roles at all (over 500 of them) -- a
     test for an admin-gated endpoint has to explicitly opt into this one,
     so forgetting to gate a newly-added admin-only route shows up as a
@@ -63,6 +64,18 @@ def _fake_admin_user() -> User:
         hashed_password="unused",
         organization_id=DEFAULT_ORGANIZATION_ID,
         role=ROLE_ADMIN,
+        is_active=True,
+        created_at=datetime.now(UTC),
+    )
+
+
+def _fake_manager_user() -> User:
+    return User(
+        id=TEST_MANAGER_USER_ID,
+        email="test-manager-fixture@example.com",
+        hashed_password="unused",
+        organization_id=DEFAULT_ORGANIZATION_ID,
+        role=ROLE_MANAGER,
         is_active=True,
         created_at=datetime.now(UTC),
     )
@@ -92,6 +105,12 @@ def override_admin_auth(app) -> None:
     detail ever changes."""
     app.dependency_overrides[get_current_user] = _fake_admin_user
     app.dependency_overrides[require_admin] = _fake_admin_user
+
+
+def override_manager_auth(app) -> None:
+    """Signed-in manager (PRD SS6.4 RBAC's middle role) -- passes
+    require_manager, still fails require_admin."""
+    app.dependency_overrides[get_current_user] = _fake_manager_user
 
 
 @pytest.fixture()

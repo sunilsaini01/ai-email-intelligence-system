@@ -64,8 +64,21 @@ class Settings(BaseSettings):
     # replaced before any non-local use, same as before.
     SECRET_KEY: str = Field(default="CHANGE_ME_IN_PRODUCTION")
 
-    # --- Phase 17 (real authentication) ---
-    JWT_ALGORITHM: str = Field(default="HS256")
+    # --- Phase 17 (real authentication), RS256 since Phase 22 ---
+    # PRD SS6.4 names RS256. Keys are PEM strings (JWT_PRIVATE_KEY /
+    # JWT_PUBLIC_KEY, literal "\n"-escaped newlines accepted so they fit in a
+    # single env var / k8s Secret value). Outside production, a missing
+    # keypair is generated once and persisted under JWT_KEY_DIR -- see
+    # app/core/security.py. Setting JWT_ALGORITHM=HS256 still works and
+    # signs with SECRET_KEY, for anyone who needs the old behavior.
+    JWT_ALGORITHM: str = Field(default="RS256")
+    JWT_PRIVATE_KEY: str = Field(default="")
+    JWT_PUBLIC_KEY: str = Field(default="")
+    JWT_KEY_DIR: str = Field(default=".jwt_keys")
+    # Membership security fix: public POST /auth/register can only create a
+    # NEW organization. Set false for a closed deployment where every
+    # account must come from an admin invitation.
+    ALLOW_PUBLIC_ORGANIZATION_SIGNUP: bool = Field(default=True)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60 * 24)  # 24h -- a documented development default, not a validated session-length policy; the PRD names none.
 
     # --- Phase 11 (Manager Dashboard) — CORS ---
@@ -232,6 +245,29 @@ class Settings(BaseSettings):
     # starving every other connection's poll turn and the rest of the
     # agents process's event loop.
     MAILBOX_MAX_MESSAGES_PER_POLL: int = Field(default=20)
+
+    # --- Phase 22 (PRD gap closure) -- agents-process periodic jobs ---
+    # See app/services/scheduled_jobs.py. Development defaults, not
+    # validated operational values.
+    SLA_SWEEP_INTERVAL_SECONDS: int = Field(default=300)
+    DRIFT_CHECK_INTERVAL_SECONDS: int = Field(default=3600)
+    RETRAINING_POLL_INTERVAL_SECONDS: int = Field(default=60)
+    RETENTION_PURGE_INTERVAL_SECONDS: int = Field(default=24 * 3600)
+    REPORT_CHECK_INTERVAL_SECONDS: int = Field(default=3600)
+    # 0 = Monday. The weekly report covers the previous Monday-Sunday.
+    WEEKLY_REPORT_WEEKDAY: int = Field(default=0)
+
+    # --- Phase 22 -- API rate limiting (PRD SS13.1: 1,000 req/min per
+    # organization, configurable). Per API process; see
+    # app/middleware/rate_limit.py for the multi-replica caveat.
+    RATE_LIMIT_PER_MINUTE: int = Field(default=1000)
+    RATE_LIMIT_ENABLED: bool = Field(default=True)
+
+    # Where the per-module `*_feedback.jsonl` correction logs live. Empty =
+    # the repo's artifacts/ dir (the original behavior). Kubernetes sets
+    # this to a writable volume because the container root filesystem is
+    # read-only there.
+    FEEDBACK_LOG_DIR: str = Field(default="")
 
 
 @lru_cache

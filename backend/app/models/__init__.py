@@ -19,9 +19,13 @@ from app.models.agent_execution import AgentExecution
 from app.models.category_prediction_log import CategoryPredictionLog
 from app.models.email_record import EmailRecord
 from app.models.feedback_event import FeedbackEvent
+from app.models.generated_report import GeneratedReport
 from app.models.intent_prediction_log import IntentPredictionLog
 from app.models.mailbox_connection import MailboxConnection
 from app.models.mailbox_ingested_message import MailboxIngestedMessage
+from app.models.notification import Notification
+from app.models.organization import Organization, OrganizationInvitation
+from app.models.organization_settings import OrganizationSettings
 from app.models.priority_prediction_log import PriorityPredictionLog
 from app.models.reply_draft import ReplyDraft
 from app.models.retraining_trigger import RetrainingTrigger
@@ -38,9 +42,14 @@ __all__ = [
     "CategoryPredictionLog",
     "EmailRecord",
     "FeedbackEvent",
+    "GeneratedReport",
     "IntentPredictionLog",
     "MailboxConnection",
     "MailboxIngestedMessage",
+    "Notification",
+    "Organization",
+    "OrganizationInvitation",
+    "OrganizationSettings",
     "PriorityPredictionLog",
     "ReplyDraft",
     "RetrainingTrigger",

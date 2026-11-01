@@ -121,6 +121,7 @@ async def predict_summary(
 @router.post("/feedback", response_model=SummarizationFeedbackResponse)
 async def submit_summary_feedback(
     request: SummarizationFeedbackRequest,
+    current_user: User = Depends(get_current_user),
     feedback_logger: FeedbackLogger = Depends(get_summarization_feedback_logger),
     db: AsyncSession = Depends(get_db),
 ) -> SummarizationFeedbackResponse:
@@ -146,7 +147,8 @@ async def submit_summary_feedback(
             action=action,
             original_value=request.generated_summary,
             corrected_value=request.corrected_summary,
-            reviewer_id=request.reviewer_id,
+            organization_id=current_user.organization_id,
+            reviewer_id=str(current_user.id),
             reason=request.reason,
         )
     except Exception:

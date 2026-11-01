@@ -30,10 +30,12 @@ from functools import lru_cache
 from typing import Any
 
 from app.routing.keyword_matcher import KEYWORD_MATCHER_VERSION, top_department_by_keywords
+from app.routing.priority_adjustment import adjust_priority
 from app.routing.rules import ROUTING_RULES_VERSION, RoutingSignals, resolve_routing
 from app.routing.sender_domain import classify_sender_domain
 from app.routing.signal_reliability import SIGNAL_RELIABILITY
 from app.services.category_service import CategoryService, get_category_service
+from app.services.category_taxonomy import filter_disabled
 from app.services.intent_service import IntentService, get_intent_service
 from app.services.priority_service import PriorityService, get_priority_service
 from app.services.sentiment_service import SentimentService, get_sentiment_service
@@ -84,7 +86,18 @@ class RoutingService:
         precomputed_intent: dict | None = _NOT_PROVIDED,
         precomputed_sentiment: dict | None = _NOT_PROVIDED,
         precomputed_priority: dict | None = _NOT_PROVIDED,
+        sender_negative_history: int = 0,
+        department_thresholds: dict[str, float] | None = None,
+        disabled_categories: frozenset[str] = frozenset(),
     ) -> dict:
+        """`sender_negative_history` (FR-17/FR-32) and `department_thresholds`
+        (FR-41) both come from the database, which this synchronous,
+        DB-free method never touches -- async callers look them up first
+        and pass them in. Both default to "no history / default
+        thresholds", which reproduces the pre-existing behavior exactly.
+        `disabled_categories` (FR-23) likewise comes from the
+        organization's settings: a category the organization switched off
+        is never chosen as the routing department."""
         subject = subject or ""
         body = body or ""
         unavailable: list[str] = []
@@ -123,6 +136,9 @@ class RoutingService:
                 unavailable,
             )
 
+        if category_result and disabled_categories:
+            category_result = filter_disabled(category_result, disabled_categories)
+
         category, category_confidence, category_second, category_second_confidence = (
             self._top_two_categories(category_result)
         )
@@ -144,6 +160,16 @@ class RoutingService:
         if sender_domain_type is None:
             sender_domain_type = "unknown"
 
+        # FR-31/FR-17: the priority the rules (and every downstream
+        # consumer) see is the sentiment/sender-history-adjusted one; the
+        # model's own label is kept alongside it in the response.
+        priority_adjustment = adjust_priority(
+            priority_result["priority"] if priority_result else None,
+            sentiment_result["sentiment"] if sentiment_result else None,
+            is_spam,
+            sender_negative_count=sender_negative_history,
+        )
+
         signals = RoutingSignals(
             is_spam=is_spam,
             # spam_score, NOT confidence -- confidence is max(probabilities),
@@ -161,7 +187,7 @@ class RoutingService:
             category_second=category_second,
             category_second_confidence=category_second_confidence,
             intents=tuple(i["intent"] for i in intent_result["intents"]) if intent_result else (),
-            priority=priority_result["priority"] if priority_result else None,
+            priority=priority_adjustment.adjusted_priority,
             sentiment=sentiment_result["sentiment"] if sentiment_result else None,
             keyword_top=keyword_top,
             keyword_votes=keyword_votes,
@@ -169,7 +195,7 @@ class RoutingService:
             unavailable_signals=tuple(unavailable),
         )
 
-        decision = resolve_routing(signals)
+        decision = resolve_routing(signals, department_thresholds=department_thresholds)
 
         supporting_signals: dict[str, Any] = {
             "spam": self._signal_view(
@@ -197,7 +223,15 @@ class RoutingService:
                 else None
             ),
             "sentiment": self._signal_view(sentiment_result, {"label": "sentiment"}, "sentiment"),
-            "priority": self._signal_view(priority_result, {"label": "priority"}, "priority"),
+            "priority": (
+                {
+                    **self._signal_view(priority_result, {"label": "priority"}, "priority"),
+                    "label": priority_adjustment.adjusted_priority,
+                    "model_label": priority_adjustment.model_priority,
+                }
+                if priority_result
+                else None
+            ),
             "keywords": (
                 {"votes": keyword_votes, "reliability": SIGNAL_RELIABILITY["keywords"]}
                 if keyword_votes
@@ -235,6 +269,7 @@ class RoutingService:
             "routing_rules_version": ROUTING_RULES_VERSION,
             "keyword_matcher_version": KEYWORD_MATCHER_VERSION,
             "upstream_failures": unavailable,
+            "priority_adjustment": priority_adjustment.as_dict(),
             "processing_ms": round(processing_ms, 2),
         }
 

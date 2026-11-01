@@ -22,6 +22,9 @@ class SentimentPredictionRepository:
         model_version: str,
         processing_ms: float,
         organization_id: str | None = None,
+        sender_email: str | None = None,
+        primary_emotion: str | None = None,
+        emotions: list | None = None,
     ) -> SentimentPredictionLog:
         # organization_id optional -- see spam_prediction_repository.py's
         # identical parameter for the full rationale.
@@ -34,6 +37,9 @@ class SentimentPredictionRepository:
             confidence=confidence,
             model_version=model_version,
             processing_ms=processing_ms,
+            sender_email=(sender_email or "").strip().lower() or None,
+            primary_emotion=primary_emotion,
+            emotions=emotions,
         )
 
         self.session.add(record)

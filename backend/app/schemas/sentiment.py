@@ -14,12 +14,21 @@ from pydantic import BaseModel, Field
 class SentimentPredictionRequest(BaseModel):
     subject: str = Field(default="", description="Raw email subject line.")
     body: str = Field(..., description="Raw email body (HTML or plain text).")
+    sender_email: str = Field(default="", description="Optional -- recorded so per-sender sentiment trends (FR-32) can be tracked.")
+
+
+class EmotionScore(BaseModel):
+    emotion: str
+    confidence: float
 
 
 class SentimentPredictionResponse(BaseModel):
     sentiment: str  # one of FR-29's 5 classes
     confidence: float
     probabilities: dict[str, float]  # heuristic distribution -- see model card "Calibration"
+    primary_emotion: str | None = None  # FR-30; None when no emotion cue is strong enough
+    emotions: list[EmotionScore] = Field(default_factory=list)
+    emotion_model_version: str | None = None
     model_version: str
     processing_ms: float
 
@@ -30,7 +39,7 @@ class SentimentFeedbackRequest(BaseModel):
     predicted_label: str
     corrected_label: str
     comment: str | None = None
-    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
+    reviewer_id: str | None = Field(default=None, description="Deprecated and ignored -- the reviewer is the signed-in user (FR-59).")
 
 
 class SentimentFeedbackResponse(BaseModel):

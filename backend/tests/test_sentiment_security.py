@@ -50,6 +50,9 @@ def test_injected_instruction_text_is_treated_as_ordinary_content():
         "sentiment",
         "confidence",
         "probabilities",
+        "primary_emotion",  # Phase 22 (FR-30)
+        "emotions",
+        "emotion_model_version",
         "model_version",
         "processing_ms",
     }

@@ -29,9 +29,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_dependency import get_current_user
 from app.database.repositories.email_repository import EmailRepository
 from app.database.session import DB_WRITE_TIMEOUT_SECONDS, get_db
 from app.models.feedback_event import ACTION_RELEVANCE
+from app.models.user import User
 from app.retrieval.identity import compute_content_hash
 from app.retrieval.resolution_status import RESOLUTION_STATUSES
 from app.schemas.retrieval import (
@@ -65,6 +67,7 @@ _OVERFETCH_CAP = 50
 @router.post("/index", response_model=RetrievalIndexResponse)
 async def index_email(
     request: RetrievalIndexRequest,
+    current_user: User = Depends(get_current_user),
     service: RetrievalService = Depends(get_retrieval_service),
     db: AsyncSession = Depends(get_db),
 ) -> RetrievalIndexResponse:
@@ -75,7 +78,7 @@ async def index_email(
     try:
         record, was_created = await asyncio.wait_for(
             repository.upsert_by_content_hash(
-                organization_id=request.organization_id,
+                organization_id=current_user.organization_id,
                 content_hash=content_hash,
                 subject=request.subject,
                 body=request.body,
@@ -99,7 +102,7 @@ async def index_email(
             body=request.body,
             category=request.category,
             department=request.department,
-            organization_id=request.organization_id,
+            organization_id=current_user.organization_id,
         )
     except Exception as e:
         logger.error("retrieval_index_embedding_failed", exc_info=True)
@@ -141,6 +144,7 @@ async def index_email(
 @router.post("/search", response_model=RetrievalSearchResponse)
 async def search_similar_emails(
     request: RetrievalSearchRequest,
+    current_user: User = Depends(get_current_user),
     service: RetrievalService = Depends(get_retrieval_service),
     db: AsyncSession = Depends(get_db),
 ) -> RetrievalSearchResponse:
@@ -153,7 +157,7 @@ async def search_similar_emails(
             subject=request.subject,
             body=request.body,
             top_k=fetch_k,
-            organization_id=request.organization_id,
+            organization_id=current_user.organization_id,
             category=request.category,
             department=request.department,
         )
@@ -168,7 +172,7 @@ async def search_similar_emails(
     for match in raw["matches"]:
         if len(results) >= request.top_k:
             break
-        record = await repository.get_by_content_hash(request.organization_id, match["content_hash"])
+        record = await repository.get_by_content_hash(current_user.organization_id, match["content_hash"])
         if record is None or record.is_deleted:
             continue  # Step 12 point 8/9 -- stale vector-store entry, skip rather than error
         if request.resolution_status and record.resolution_status != request.resolution_status:
@@ -222,9 +226,10 @@ def _parse_email_id(email_id: str) -> uuid.UUID:
 async def update_resolution_status(
     email_id: str,
     request: ResolutionStatusUpdateRequest,
-    organization_id: str = "default",
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ResolutionStatusUpdateResponse:
+    organization_id = current_user.organization_id
     if request.resolution_status not in RESOLUTION_STATUSES:
         raise HTTPException(
             status_code=422, detail=f"resolution_status must be one of {RESOLUTION_STATUSES}"
@@ -243,10 +248,11 @@ async def update_resolution_status(
 @router.delete("/emails/{email_id}", status_code=204)
 async def delete_email(
     email_id: str,
-    organization_id: str = "default",
+    current_user: User = Depends(get_current_user),
     service: RetrievalService = Depends(get_retrieval_service),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    organization_id = current_user.organization_id
     parsed_id = _parse_email_id(email_id)
     repository = EmailRepository(db)
     record = await repository.soft_delete(organization_id, parsed_id)
@@ -264,6 +270,7 @@ async def delete_email(
 @router.post("/feedback", response_model=RetrievalFeedbackResponse)
 async def submit_retrieval_feedback(
     request: RetrievalFeedbackRequest,
+    current_user: User = Depends(get_current_user),
     feedback_logger: FeedbackLogger = Depends(get_retrieval_feedback_logger),
     db: AsyncSession = Depends(get_db),
 ) -> RetrievalFeedbackResponse:
@@ -282,7 +289,8 @@ async def submit_retrieval_feedback(
             action=ACTION_RELEVANCE,
             prediction_id=request.result_email_id,  # references emails.id, not a *_prediction_logs row
             corrected_value={"useful": request.useful},
-            reviewer_id=request.reviewer_id,
+            organization_id=current_user.organization_id,
+            reviewer_id=str(current_user.id),
             reason=request.comment,
         )
     except Exception:

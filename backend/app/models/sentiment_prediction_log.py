@@ -20,7 +20,7 @@ identical.
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.session import Base
@@ -45,6 +45,14 @@ class SentimentPredictionLog(Base):
     synthetic_model: Mapped[bool] = mapped_column(Boolean, default=True)
     model_version: Mapped[str] = mapped_column(String(100))
     processing_ms: Mapped[float] = mapped_column(Float)
+
+    # FR-32: per-sender trend tracking needs the sender on the row itself
+    # -- nullable because the direct /sentiment/predict endpoint does not
+    # require one.
+    sender_email: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
+    # FR-30 -- see app/nlp/emotion_detector.py.
+    primary_emotion: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    emotions: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)

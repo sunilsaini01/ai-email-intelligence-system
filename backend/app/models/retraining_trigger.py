@@ -21,7 +21,7 @@ count, against what threshold -- not just "yes/no, currently over."
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.session import Base
@@ -37,6 +37,18 @@ class RetrainingTrigger(Base):
     feedback_count_at_trigger: Mapped[int] = mapped_column(Integer)
     threshold_used: Mapped[int] = mapped_column(Integer)
     consumed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # FR-61 execution (app/mlops/retraining_runner.py). A trigger is
+    # PENDING until the agents process claims it; `consumed` is set True at
+    # claim time so the pre-existing column keeps its documented meaning.
+    status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    # "feedback_threshold" (automatic, FR-61) or "manual" (PRD Epic 4's
+    # "trigger retraining from the dashboard").
+    source: Mapped[str] = mapped_column(String(30), default="feedback_threshold")
+    requested_by_user_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     triggered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)

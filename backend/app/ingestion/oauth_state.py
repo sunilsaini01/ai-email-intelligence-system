@@ -27,7 +27,7 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 
-from app.core.config import get_settings
+from app.core.security import sign_jwt, verify_jwt
 
 TOKEN_TYPE_MAILBOX_OAUTH_STATE = "mailbox_oauth_state"  # noqa: S105 -- a JWT claim value, not a credential
 STATE_EXPIRE_MINUTES = 10
@@ -39,7 +39,6 @@ class InvalidOAuthState(RuntimeError):
 
 
 def build_state(*, organization_id: str, user_id: uuid.UUID, provider: str) -> str:
-    settings = get_settings()
     now = datetime.now(UTC)
     payload = {
         "org": organization_id,
@@ -49,16 +48,15 @@ def build_state(*, organization_id: str, user_id: uuid.UUID, provider: str) -> s
         "iat": now,
         "exp": now + timedelta(minutes=STATE_EXPIRE_MINUTES),
     }
-    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return sign_jwt(payload)
 
 
 def verify_state(token: str, *, expected_provider: str) -> tuple[str, uuid.UUID]:
     """Returns (organization_id, user_id). Raises InvalidOAuthState on any
     failure -- expired, wrong provider (a state minted for /gmail/callback
     presented to /outlook/callback), or malformed."""
-    settings = get_settings()
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        payload = verify_jwt(token)
         if payload.get("type") != TOKEN_TYPE_MAILBOX_OAUTH_STATE:
             raise InvalidOAuthState("state token is not a mailbox OAuth state token.")
         if payload.get("provider") != expected_provider:

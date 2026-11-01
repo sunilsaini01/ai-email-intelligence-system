@@ -138,6 +138,10 @@ class AutoReplyService:
         current_body: str,
         retrieved_context: list[RetrievedContextItem],
         llm_timeout_seconds: float,
+        category: str | None = None,
+        department: str | None = None,
+        intents: list[str] | None = None,
+        approved_examples: list[str] | None = None,
     ) -> GenerationOutcome:
         anon_subject, anon_body, entity_types = self.anonymize(current_subject, current_body)
 
@@ -163,8 +167,13 @@ class AutoReplyService:
             current_subject=anon_subject,
             current_body=anon_body,
             retrieved_context=anonymized_context,
-            category=None,
-            department=None,
+            category=category,
+            department=department,
+            intents=intents,
+            # Same FR-09 boundary as the context items above: stored reply
+            # text can quote customer details, so it is re-anonymized
+            # before it can reach the external LLM.
+            approved_examples=[anonymize_email_body(t)[0] for t in (approved_examples or [])],
         )
 
         try:

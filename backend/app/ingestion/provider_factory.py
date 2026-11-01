@@ -8,9 +8,15 @@ particular can't drift between the two callers.
 
 from app.core.config import get_settings
 from app.ingestion.gmail_provider import GmailProvider
+from app.ingestion.imap_provider import ImapProvider
 from app.ingestion.mailbox_provider import MailboxProvider
 from app.ingestion.outlook_provider import OutlookProvider
-from app.models.mailbox_connection import PROVIDER_GMAIL, PROVIDER_OUTLOOK
+from app.models.mailbox_connection import (
+    MAILBOX_PROVIDERS,
+    PROVIDER_GMAIL,
+    PROVIDER_IMAP,
+    PROVIDER_OUTLOOK,
+)
 
 
 class UnknownMailboxProvider(ValueError):
@@ -34,4 +40,6 @@ def build_provider(provider: str) -> MailboxProvider:
             tenant_id=settings.MICROSOFT_TENANT_ID,
             redirect_uri=redirect_uri,
         )
-    raise UnknownMailboxProvider(f"Unknown mailbox provider: {provider!r}. Expected one of {PROVIDER_GMAIL!r}, {PROVIDER_OUTLOOK!r}.")
+    if provider == PROVIDER_IMAP:
+        return ImapProvider()
+    raise UnknownMailboxProvider(f"Unknown mailbox provider: {provider!r}. Expected one of {MAILBOX_PROVIDERS!r}.")

@@ -420,8 +420,9 @@ its "analyzer," which detects personal information, and its
 is turned into an embedding or sent to an outside LLM.
 
 **Authentication.** Every real business endpoint now requires a signed-in
-user. Logging in gets you a JWT (a signed token, using the HS256
-algorithm) that has to be presented on every request afterward; passwords
+user. Logging in gets you a JWT (a signed token, using the RS256
+algorithm the PRD specifies: signed with a private key, checkable with a
+public one) that has to be presented on every request afterward; passwords
 themselves are hashed with bcrypt (via a library called `passlib`) rather
 than stored as plain text. Which organization's data you can see is taken
 from your login token, not from something you could simply type into a
@@ -601,12 +602,9 @@ number — that's the standard held for every claim below.
   Google or Microsoft first. There's also no dashboard page yet for
   connecting a mailbox — for now it's API-only.
 - **Role-Based Authorization** — every user already had a role
-  (`admin` or `member`) stored on their account and included in their
-  login token, but nothing checked it. Now it's enforced: the first
-  person to register for an organization automatically becomes its
-  admin (there's no admin yet to promote anyone, so bootstrapping has to
-  start somewhere), everyone who registers after them defaults to
-  member, and organization-wide configuration actions — right now,
+  (`admin` or `member`; since Phase 22, `agent`/`manager`/`admin`) stored on their account and included in their
+  login token, but nothing checked it. Now it's enforced, and
+  organization-wide configuration actions — right now,
   connecting or disconnecting a mailbox — require the signed-in user to
   actually be an admin. Reading data (like the list of connected
   mailboxes) stays open to any signed-in member.
@@ -692,19 +690,61 @@ number — that's the standard held for every claim below.
   rare class, not newly-gained detection ability, and the model card says
   so rather than presenting an unqualified win.
 
+- **PRD gap closure (Phase 22)** — a line-by-line pass against the PRD
+  closed the remaining functional and non-functional gaps. Each item, with
+  its tests and remaining limits, is in
+  `docs/evidence/requirements_traceability_phase22_prd_gaps.md`:
+  - *Signals:* emotion detection (Anger/Frustration/Confusion/Satisfaction/
+    Urgency); negative sentiment and a sender's recent negative history now
+    raise priority (bounded, never for spam); per-sender sentiment trends
+    with escalation candidates.
+  - *Routing:* per-department auto-route thresholds learned from routing
+    feedback; round-robin or skills-based assignment to an agent inside the
+    routed department.
+  - *Notifications:* in-app notifications plus an optional per-organization
+    webhook for Critical emails, SLA at-risk/breached emails, drift and
+    retraining results.
+  - *Feedback loop:* crossing the feedback threshold (or an admin's request)
+    now actually retrains, with the logged corrections folded into the
+    training split, and registers an MLflow candidate. Promotion stays a
+    reviewed step. Approved and edited reply drafts become style examples
+    for later drafts, and the detected intent steers each draft.
+  - *Analytics:* weekly CSV/PDF reports generated automatically; model-drift
+    monitoring (prediction PSI and correction-rate drift) with Prometheus
+    alerts and a dashboard panel.
+  - *Administration:* per-organization settings, category renaming/
+    disabling, and user role/department/skills management, all in a new
+    Administration page.
+  - *Security and compliance:* RS256 JWTs; agent/manager/admin roles;
+    GDPR right-to-deletion and configurable retention; per-prediction
+    feature explanations (exact SHAP for these linear models);
+    per-organization rate limiting; user-attributed audit log lines;
+    feedback endpoints that record the signed-in user rather than a
+    caller-supplied ID; `/retrieval/*` scoped to the caller's
+    organization.
+  - *Infrastructure:* IMAP mailboxes alongside Gmail/Outlook; Trivy image
+    scanning in CI; read-only root filesystems in Kubernetes.
+
+- **Fixed: anyone could sign up into any existing organization.**
+  `POST /auth/register` used to accept a caller-chosen `organization_id`
+  and create an active account inside it. The first account to name a new
+  ID became its admin, decided by counting users. Now signup only ever creates a NEW
+  organization, with a server-generated ID and its creator as admin, in
+  one transaction. Joining an existing organization requires an admin's
+  invitation: bound to one email and organization, expiring, single-use,
+  and consumed atomically. Existing accounts are marked
+  `legacy_unverified` for admins to review; none are disabled
+  automatically. See `docs/security/organization_membership_remediation.md`.
+
 **Planned:**
 
-- Basic model-drift monitoring (calibration itself is now done, see above).
-- Explainability (which factors led to a given classification) surfaced
-  alongside predictions, and a right-to-deletion endpoint for GDPR.
-- Outbound notifications — a webhook or email alert whenever a critical
-  or SLA-at-risk email comes in.
-- Automatically generating scheduled reports, and automatically
-  triggering model retraining once enough feedback has built up.
 - Deploying to a real managed cloud Kubernetes cluster, with managed
-  Postgres and Kafka, a proper Ingress, and TLS encryption.
+  Postgres and Kafka, a proper Ingress, TLS, and a secrets manager.
 - Replacing the synthetic training labels for priority, categorization,
-  and intent detection with real, human-annotated ones.
+  and intent detection with real, human-annotated ones, then comparing a
+  fine-tuned transformer against each baseline.
+- Raising spam recall from 97.22% to the PRD's 99% target, which means
+  accepting a higher false-positive rate or adding training data.
 
 ---
 
@@ -797,7 +837,7 @@ GET  /workflows/{job_id}       -> workflow + per-agent status
 ```
 
 There's also a set of endpoints for signing in (`/auth/register`,
-`/auth/login`, `/auth/me`) and for connecting a Gmail or Outlook mailbox
+`/auth/login`, `/auth/me`, `/auth/invitations/accept`) and for connecting a Gmail or Outlook mailbox
 (`/mailbox/{provider}/connect`, `/mailbox/{provider}/callback`,
 `/mailbox/connections`) — every endpoint except signing in and health
 checks requires a valid login token.

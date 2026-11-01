@@ -57,3 +57,4 @@ htmlcov/
 
 # --- Kubernetes (Phase 14 — filled-in secrets, never the template) ---
 /k8s/secrets.yaml
+.jwt_keys/

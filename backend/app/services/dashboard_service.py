@@ -220,19 +220,54 @@ async def get_priority_distribution(db: AsyncSession, organization_id: str, date
     return {"counts": counts, "evidence": evidence_badge("priority")}
 
 
+SLA_WITHIN = "within_sla"
+SLA_AT_RISK = "at_risk"
+SLA_BREACHED = "breached"
+
+
+def sla_targets_hours() -> dict[str, float]:
+    settings = get_settings()
+    return {
+        "Critical": settings.SLA_CRITICAL_HOURS,
+        "High": settings.SLA_HIGH_HOURS,
+        "Medium": settings.SLA_MEDIUM_HOURS,
+        "Low": settings.SLA_LOW_HOURS,
+    }
+
+
+def classify_sla(priority: str, received_at: datetime, resolved_at: datetime | None, now: datetime) -> str | None:
+    """One email's SLA state -- shared by the SLA dashboard below and the
+    agents process's SLA-at-risk notification sweep
+    (app/services/scheduled_jobs.py), so the two can never disagree about
+    what "at risk" means. None for an email with no (known) priority."""
+    targets = sla_targets_hours()
+    if priority not in targets:
+        return None
+    target_hours = targets[priority]
+    at_risk_hours = target_hours * get_settings().SLA_AT_RISK_FRACTION
+    end_point = resolved_at if resolved_at is not None else now
+    # SQLite (used in this project's DB tests, aiosqlite) has no real
+    # timezone-aware column type -- DateTime(timezone=True) round-trips
+    # as a NAIVE datetime there even though it's tz-aware in production
+    # Postgres. Normalize defensively (assume UTC, this codebase's only
+    # timezone -- every writer already uses datetime.now(UTC)).
+    end_point = end_point if end_point.tzinfo is not None else end_point.replace(tzinfo=UTC)
+    received_at = received_at if received_at.tzinfo is not None else received_at.replace(tzinfo=UTC)
+    elapsed_hours = (end_point - received_at).total_seconds() / 3600.0
+    if elapsed_hours >= target_hours:
+        return SLA_BREACHED
+    if elapsed_hours >= at_risk_hours:
+        return SLA_AT_RISK
+    return SLA_WITHIN
+
+
 async def get_sla(db: AsyncSession, organization_id: str, date_range: DateRange) -> dict:
     """FR-53's SLA dashboard. Computed entirely from `emails` (priority +
     received_at + resolved_at/resolution_status) -- see
     docs/architecture_dashboard.md "emails.priority" for why no join to
     any prediction table is needed. SLA targets are documented development
     defaults (Settings), not real business values -- the PRD names none."""
-    settings = get_settings()
-    targets = {
-        "Critical": settings.SLA_CRITICAL_HOURS,
-        "High": settings.SLA_HIGH_HOURS,
-        "Medium": settings.SLA_MEDIUM_HOURS,
-        "Low": settings.SLA_LOW_HOURS,
-    }
+    targets = sla_targets_hours()
     result = await db.execute(
         select(EmailRecord.priority, EmailRecord.received_at, EmailRecord.resolved_at).where(
             EmailRecord.organization_id == organization_id,
@@ -242,33 +277,15 @@ async def get_sla(db: AsyncSession, organization_id: str, date_range: DateRange)
         )
     )
     now = datetime.now(UTC)
-    buckets: dict[str, dict[str, int]] = {p: {"within_sla": 0, "at_risk": 0, "breached": 0} for p in targets}
+    buckets: dict[str, dict[str, int]] = {p: {SLA_WITHIN: 0, SLA_AT_RISK: 0, SLA_BREACHED: 0} for p in targets}
     excluded = 0
 
     for priority, received_at, resolved_at in result.all():
-        if priority is None or priority not in targets:
+        state = classify_sla(priority, received_at, resolved_at, now) if priority else None
+        if state is None:
             excluded += 1
             continue
-        target_hours = targets[priority]
-        at_risk_hours = target_hours * settings.SLA_AT_RISK_FRACTION
-        end_point = resolved_at if resolved_at is not None else now
-        # SQLite (used in this project's DB tests, aiosqlite) has no real
-        # timezone-aware column type -- DateTime(timezone=True) round-trips
-        # as a NAIVE datetime there even though it's tz-aware in production
-        # Postgres. Normalize defensively (assume UTC, this codebase's only
-        # timezone -- every writer already uses datetime.now(UTC)) rather
-        # than letting the subtraction crash on a dialect this table is
-        # actually tested against.
-        end_point = end_point if end_point.tzinfo is not None else end_point.replace(tzinfo=UTC)
-        received_at = received_at if received_at.tzinfo is not None else received_at.replace(tzinfo=UTC)
-        elapsed_hours = (end_point - received_at).total_seconds() / 3600.0
-
-        if elapsed_hours >= target_hours:
-            buckets[priority]["breached"] += 1
-        elif elapsed_hours >= at_risk_hours:
-            buckets[priority]["at_risk"] += 1
-        else:
-            buckets[priority]["within_sla"] += 1
+        buckets[priority][state] += 1
 
     bucket_list = [{"priority": p, **counts} for p, counts in buckets.items()]
     return {
@@ -332,6 +349,10 @@ async def _correction_rate_for_module(db: AsyncSession, module: str, organizatio
     reviewed = corrected + confirmed
     rate = (corrected / reviewed) if reviewed > 0 else None
     return rate, reviewed, corrected
+
+
+# Public name for reuse outside this module (drift monitoring).
+correction_rate_for_module = _correction_rate_for_module
 
 
 async def get_model_quality(db: AsyncSession, organization_id: str, date_range: DateRange) -> dict:

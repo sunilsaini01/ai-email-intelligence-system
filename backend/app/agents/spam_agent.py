@@ -27,5 +27,5 @@ class SpamAgent(BaseAgent):
             subject=payload.get("subject", ""),
             body=payload.get("body", ""),
             organization_id=organization_id,
-            **result,
+            **{k: v for k, v in result.items() if k != "explanation"},
         )

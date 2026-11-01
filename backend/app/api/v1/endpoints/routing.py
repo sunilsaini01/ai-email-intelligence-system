@@ -44,6 +44,7 @@ from app.schemas.routing_override import (
 )
 from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_routing_feedback_logger
+from app.services.routing_context import load_routing_context
 from app.services.routing_override_service import apply_organization_overrides
 from app.services.routing_service import RoutingService, get_routing_service
 
@@ -59,11 +60,22 @@ async def predict_routing(
     service: RoutingService = Depends(get_routing_service),
     db: AsyncSession = Depends(get_db),
 ) -> RoutingPredictionResponse:
+    # FR-17/FR-23/FR-41 inputs that live in the database -- loaded here
+    # because route() itself is synchronous and DB-free. A failure degrades
+    # to the defaults (no history, default thresholds, full taxonomy),
+    # never to a failed routing call.
+    try:
+        route_kwargs, _ = await load_routing_context(db, current_user.organization_id, request.sender_email)
+    except Exception:
+        logger.warning("routing_context_load_failed", exc_info=True)
+        route_kwargs = {}
+
     result = await run_in_threadpool(
         service.route,
         subject=request.subject,
         body=request.body,
         sender_email=request.sender_email,
+        **route_kwargs,
     )
 
     # Phase 21: admin-configurable overrides (app/routing/overrides.py) are
@@ -119,6 +131,7 @@ async def predict_routing(
 @router.post("/feedback", response_model=RoutingFeedbackResponse)
 async def submit_routing_feedback(
     request: RoutingFeedbackRequest,
+    current_user: User = Depends(get_current_user),
     feedback_logger: FeedbackLogger = Depends(get_routing_feedback_logger),
     db: AsyncSession = Depends(get_db),
 ) -> RoutingFeedbackResponse:
@@ -139,7 +152,8 @@ async def submit_routing_feedback(
             action=ACTION_CORRECTION,
             original_value={"department": request.predicted_department, "action": request.predicted_action},
             corrected_value={"department": request.corrected_department, "action": request.corrected_action},
-            reviewer_id=request.reviewer_id,
+            organization_id=current_user.organization_id,
+            reviewer_id=str(current_user.id),
             reason=request.comment,
         )
     except Exception:

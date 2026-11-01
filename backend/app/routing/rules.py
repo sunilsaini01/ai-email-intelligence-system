@@ -115,6 +115,12 @@ RULE_REGISTRY: dict[str, str] = {
         "below CRITICAL_PRIORITY_CONFIDENCE_FLOOR -- downgraded to human review "
         "rather than auto-routing a Critical item unattended."
     ),
+    "R-FEEDBACK-ADJUSTED-THRESHOLD": (
+        "The chosen department's auto-route threshold was adjusted away from "
+        "CATEGORY_AUTO_ROUTE_THRESHOLD by routing feedback (FR-41) -- see "
+        "app/routing/feedback_weights.py. Recorded so the audit trail shows "
+        "the decision used a learned, not default, threshold."
+    ),
     "R-BORDERLINE-CONFIDENCE-NEGATIVE-SENTIMENT": (
         "Negative/Very Negative sentiment on an auto-routed decision whose "
         "confidence sits within BORDERLINE_SENTIMENT_MARGIN of the auto-route "
@@ -163,10 +169,19 @@ class RoutingDecision:
     matched_rules: tuple[str, ...]
 
 
-def resolve_routing(signals: RoutingSignals) -> RoutingDecision:
+def resolve_routing(
+    signals: RoutingSignals, department_thresholds: dict[str, float] | None = None
+) -> RoutingDecision:
     """Pure function: signals in, one deterministic decision out. Never
     raises, never returns a department-less non-quarantine/fallback state
-    (RULE 10 -- never silently drop an email)."""
+    (RULE 10 -- never silently drop an email).
+
+    `department_thresholds` (FR-41) optionally replaces
+    CATEGORY_AUTO_ROUTE_THRESHOLD for specific departments with a value
+    learned from routing feedback -- see app/routing/feedback_weights.py.
+    Departments absent from it use the default."""
+    department_thresholds = department_thresholds or {}
+    auto_route_threshold = CATEGORY_AUTO_ROUTE_THRESHOLD
     matched: list[str] = []
     reasons: list[str] = []
 
@@ -199,7 +214,14 @@ def resolve_routing(signals: RoutingSignals) -> RoutingDecision:
             else 1.0
         )
         is_tied = margin < CATEGORY_TIE_MARGIN
-        meets_threshold = signals.category_confidence >= CATEGORY_AUTO_ROUTE_THRESHOLD
+        auto_route_threshold = department_thresholds.get(signals.category, CATEGORY_AUTO_ROUTE_THRESHOLD)
+        if auto_route_threshold != CATEGORY_AUTO_ROUTE_THRESHOLD:
+            matched.append("R-FEEDBACK-ADJUSTED-THRESHOLD")
+            reasons.append(
+                f"Auto-route threshold for '{signals.category}' is {auto_route_threshold:.2f} "
+                f"(default {CATEGORY_AUTO_ROUTE_THRESHOLD}), adjusted from routing feedback."
+            )
+        meets_threshold = signals.category_confidence >= auto_route_threshold
 
         department = signals.category
         confidence = signals.category_confidence
@@ -217,7 +239,7 @@ def resolve_routing(signals: RoutingSignals) -> RoutingDecision:
             action = ACTION_AUTO_ROUTE
             reasons.append(
                 f"Category '{signals.category}' ({signals.category_confidence:.2f}) "
-                f">= auto-route threshold ({CATEGORY_AUTO_ROUTE_THRESHOLD})."
+                f">= auto-route threshold ({auto_route_threshold})."
             )
         else:
             matched.append("R-CATEGORY-LOW-CONFIDENCE")
@@ -225,7 +247,7 @@ def resolve_routing(signals: RoutingSignals) -> RoutingDecision:
             requires_review = True
             reasons.append(
                 f"Category '{signals.category}' confidence ({signals.category_confidence:.2f}) "
-                f"below auto-route threshold ({CATEGORY_AUTO_ROUTE_THRESHOLD})."
+                f"below auto-route threshold ({auto_route_threshold})."
             )
     elif (
         signals.keyword_top is not None
@@ -342,7 +364,7 @@ def resolve_routing(signals: RoutingSignals) -> RoutingDecision:
     if (
         signals.sentiment in NEGATIVE_SENTIMENTS
         and action == ACTION_AUTO_ROUTE
-        and confidence < (CATEGORY_AUTO_ROUTE_THRESHOLD + BORDERLINE_SENTIMENT_MARGIN)
+        and confidence < (auto_route_threshold + BORDERLINE_SENTIMENT_MARGIN)
     ):
         matched.append("R-BORDERLINE-CONFIDENCE-NEGATIVE-SENTIMENT")
         requires_review = True

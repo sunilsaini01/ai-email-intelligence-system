@@ -23,6 +23,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_dependency import get_current_user, require_admin
@@ -30,22 +31,71 @@ from app.core.token_encryption import encrypt_token
 from app.database.repositories.mailbox_connection_repository import MailboxConnectionRepository
 from app.database.session import get_db
 from app.ingestion.gmail_provider import GmailProviderUnavailable
+from app.ingestion.imap_provider import ImapProvider, encode_credentials
 from app.ingestion.mailbox_provider import MailboxProviderError
 from app.ingestion.oauth_state import InvalidOAuthState, build_state, verify_state
 from app.ingestion.outlook_provider import OutlookProviderUnavailable
 from app.ingestion.provider_factory import build_provider
-from app.models.mailbox_connection import MAILBOX_PROVIDERS
+from app.models.mailbox_connection import OAUTH_MAILBOX_PROVIDERS, PROVIDER_IMAP
 from app.models.user import User
-from app.schemas.mailbox import MailboxConnectionListResponse, MailboxConnectionResponse, MailboxConnectResponse
+from app.schemas.mailbox import (
+    ImapConnectRequest,
+    MailboxConnectionListResponse,
+    MailboxConnectionResponse,
+    MailboxConnectResponse,
+)
 
 router = APIRouter(prefix="/mailbox", tags=["Mailbox Ingestion"])
+
+
+def _to_response(c) -> MailboxConnectionResponse:
+    return MailboxConnectionResponse(
+        id=c.id,
+        provider=c.provider,
+        email_address=c.email_address,
+        status=c.status,
+        last_synced_at=c.last_synced_at,
+        last_error=c.last_error,
+        created_at=c.created_at,
+    )
 callback_router = APIRouter(prefix="/mailbox", tags=["Mailbox Ingestion"])
 logger = logging.getLogger("app.mailbox")
 
 
 def _validate_provider(provider: str) -> None:
-    if provider not in MAILBOX_PROVIDERS:
+    if provider not in OAUTH_MAILBOX_PROVIDERS:
         raise HTTPException(status_code=404, detail=f"Unknown mailbox provider: {provider!r}.")
+
+
+@router.post("/imap/connect", response_model=MailboxConnectionResponse, status_code=201)
+async def connect_imap_mailbox(
+    request: ImapConnectRequest,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> MailboxConnectionResponse:
+    """FR-01 IMAP. No browser redirect: the credentials are validated with a
+    real LOGIN right here, then stored encrypted like an OAuth refresh
+    token. Same admin-only gate as the OAuth connect flow."""
+    blob = encode_credentials(request.host.strip(), request.port, request.username.strip(), request.password)
+    try:
+        tokens = await run_in_threadpool(ImapProvider().validate_credentials, blob)
+    except MailboxProviderError as e:
+        raise HTTPException(status_code=400, detail=f"Could not connect to the IMAP server: {e}") from e
+
+    repo = MailboxConnectionRepository(db)
+    connection = await repo.upsert(
+        organization_id=current_user.organization_id,
+        connected_by_user_id=current_user.id,
+        provider=PROVIDER_IMAP,
+        email_address=tokens.email_address,
+        access_token_encrypted=encrypt_token(tokens.access_token),
+        access_token_expires_at=tokens.expires_at,
+        refresh_token_encrypted=encrypt_token(blob),
+    )
+    if tokens.initial_sync_cursor is not None:
+        await repo.update_sync_cursor(connection, tokens.initial_sync_cursor)
+    logger.info("mailbox_imap_connected", extra={"connection_id": str(connection.id)})
+    return _to_response(connection)
 
 
 @router.get("/{provider}/connect", response_model=MailboxConnectResponse)
@@ -118,18 +168,7 @@ async def list_mailbox_connections(
     repo = MailboxConnectionRepository(db)
     connections = await repo.list_for_organization(current_user.organization_id)
     return MailboxConnectionListResponse(
-        connections=[
-            MailboxConnectionResponse(
-                id=c.id,
-                provider=c.provider,
-                email_address=c.email_address,
-                status=c.status,
-                last_synced_at=c.last_synced_at,
-                last_error=c.last_error,
-                created_at=c.created_at,
-            )
-            for c in connections
-        ]
+        connections=[_to_response(c) for c in connections]
     )
 
 

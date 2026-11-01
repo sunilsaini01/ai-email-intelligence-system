@@ -31,4 +31,7 @@ class SentimentAgent(BaseAgent):
             model_version=result["model_version"],
             processing_ms=result["processing_ms"],
             organization_id=organization_id,
+            sender_email=payload.get("sender_email", ""),
+            primary_emotion=result.get("primary_emotion"),
+            emotions=result.get("emotions"),
         )

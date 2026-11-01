@@ -77,7 +77,11 @@ from app.models.workflow_execution import (
     STATUS_RUNNING,
 )
 from app.retrieval.identity import compute_content_hash
+from app.services.assignment_service import assign_agent
+from app.services.notification_service import notify_critical_email
+from app.services.organization_settings_service import ASSIGNMENT_NONE
 from app.services.retrieval_service import get_retrieval_service
+from app.services.routing_context import load_routing_context
 from app.services.routing_override_service import apply_organization_overrides
 from app.services.routing_service import get_routing_service
 
@@ -97,6 +101,8 @@ class WorkflowTracker:
     expected: set[str] = field(default_factory=lambda: {"spam", "summarization"})
     results: dict[str, dict | None] = field(default_factory=dict)
     gate_resolved: bool = False
+    # Excludes this email's own sentiment row from its sender history.
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class Orchestrator:
@@ -235,6 +241,19 @@ class Orchestrator:
     async def _finalize_workflow(self, job_id: uuid.UUID, tracker: WorkflowTracker) -> None:
         del self._pending[job_id]
 
+        # FR-17/FR-23/FR-41: same DB-backed routing inputs the /routing/predict
+        # endpoint loads (app/services/routing_context.py), so both intake
+        # paths route identically. Degrades to defaults on failure.
+        org_settings: dict = {}
+        try:
+            async with AsyncSessionLocal() as session:
+                route_kwargs, org_settings = await load_routing_context(
+                    session, tracker.organization_id, tracker.sender_email, before=tracker.started_at
+                )
+        except Exception:
+            logger.warning("orchestrator_routing_context_failed", exc_info=True, extra={"job_id": str(job_id)})
+            route_kwargs = {}
+
         routing_service = get_routing_service()
         decision = await asyncio.to_thread(
             routing_service.route,
@@ -246,10 +265,18 @@ class Orchestrator:
             precomputed_intent=tracker.results.get("intent"),
             precomputed_sentiment=tracker.results.get("sentiment"),
             precomputed_priority=tracker.results.get("priority"),
+            **route_kwargs,
         )
 
-        priority_result = tracker.results.get("priority")
-        priority_label = priority_result.get("priority") if priority_result else None
+        # FR-31/FR-17: the adjusted priority is what the email is stored,
+        # SLA-tracked and notified under; the model's label is kept too.
+        adjustment = decision.get("priority_adjustment") or {}
+        priority_label = adjustment.get("adjusted_priority")
+        model_priority_label = adjustment.get("model_priority")
+        sentiment_result = tracker.results.get("sentiment")
+        sentiment_label = sentiment_result.get("sentiment") if sentiment_result else None
+        intent_result = tracker.results.get("intent")
+        intent_labels = {i["intent"] for i in intent_result["intents"]} if intent_result else set()
 
         any_dispatched_failure = any(v is None for v in tracker.results.values())
 
@@ -267,6 +294,23 @@ class Orchestrator:
             category = (decision.get("supporting_signals", {}).get("category") or {}).get("top")
             department = decision.get("department")
 
+            # FR-42: pick an agent inside the routed department. Skipped for
+            # quarantine (department is None); best-effort otherwise.
+            assigned_agent = None
+            try:
+                assigned_agent = await assign_agent(
+                    session,
+                    tracker.organization_id,
+                    department,
+                    org_settings.get("assignment_strategy", ASSIGNMENT_NONE),
+                    required_skills=intent_labels | ({category} if category else set()),
+                )
+            except Exception:
+                logger.warning("orchestrator_assignment_failed", exc_info=True, extra={"job_id": str(job_id)})
+            decision["assigned_agent"] = (
+                {"id": str(assigned_agent.id), "email": assigned_agent.email} if assigned_agent else None
+            )
+
             email_repo = EmailRepository(session)
             content_hash = compute_content_hash(tracker.subject, tracker.body)
             index_failed = False
@@ -282,6 +326,9 @@ class Orchestrator:
                     category=category,
                     department=department,
                     priority=priority_label,
+                    model_priority=model_priority_label,
+                    sentiment=sentiment_label,
+                    assigned_agent_id=assigned_agent.id if assigned_agent else None,
                 )
                 retrieval_service = get_retrieval_service()
                 index_result = await asyncio.to_thread(
@@ -326,6 +373,23 @@ class Orchestrator:
                 if workflow.duration_ms is not None:
                     WORKFLOW_DURATION_SECONDS.observe(workflow.duration_ms / 1000)
                 WORKFLOW_TOTAL.labels(status=status).inc()
+
+            # FR-18: Critical (after FR-31 adjustment) non-spam email ->
+            # in-app notification + the organization's webhook, if any.
+            if priority_label == "Critical" and decision.get("department") is not None:
+                try:
+                    await notify_critical_email(
+                        session,
+                        tracker.organization_id,
+                        record.id if record is not None else None,
+                        tracker.subject,
+                        department,
+                        reasons=adjustment.get("reasons"),
+                    )
+                except Exception:
+                    logger.warning(
+                        "orchestrator_critical_notification_failed", exc_info=True, extra={"job_id": str(job_id)}
+                    )
 
         logger.info(
             "orchestrator_workflow_finalized",

@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
 from app.database.session import get_db
-from app.models.user import ROLE_ADMIN, User
+from app.models.user import ROLE_ADMIN, ROLE_MANAGER, USER_ROLES, User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
@@ -40,23 +40,53 @@ _CREDENTIALS_EXCEPTION = HTTPException(
 )
 
 
+async def user_for_token(token: str | None, db: AsyncSession) -> User | None:
+    """The one place a bearer token becomes a live, active User -- shared
+    by get_current_user (HTTP) and the dashboard WebSocket, which can't use
+    OAuth2PasswordBearer (it reads an Authorization header from a Request;
+    browsers can't set headers on a WebSocket, and FastAPI passes no
+    Request to a WebSocket route). None on any failure."""
+    if not token:
+        return None
+    try:
+        payload = decode_access_token(token)
+        user_id = uuid.UUID(payload["sub"])
+    except (jwt.PyJWTError, KeyError, ValueError):
+        return None
+    user = await db.get(User, user_id)
+    if user is None or not user.is_active:
+        return None
+    return user
+
+
 async def get_current_user(
     token: str | None = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    if token is None:
-        raise _CREDENTIALS_EXCEPTION
-
-    try:
-        payload = decode_access_token(token)
-        user_id = uuid.UUID(payload["sub"])
-    except (jwt.PyJWTError, KeyError, ValueError) as exc:
-        raise _CREDENTIALS_EXCEPTION from exc
-
-    user = await db.get(User, user_id)
-    if user is None or not user.is_active:
+    user = await user_for_token(token, db)
+    if user is None:
         raise _CREDENTIALS_EXCEPTION
     return user
+
+
+def has_role_at_least(user: User, minimum_role: str) -> bool:
+    """PRD SS6.4 RBAC: agent < manager < admin. An unknown role (e.g. a
+    stale row) is treated as the least privileged, never the most."""
+    rank = USER_ROLES.index(user.role) if user.role in USER_ROLES else -1
+    return rank >= USER_ROLES.index(minimum_role)
+
+
+async def require_manager(current_user: User = Depends(get_current_user)) -> User:
+    """Manager-or-admin gate: organization-level analytics exports,
+    model-quality/drift views, retraining triggers, reviewing other
+    people's notifications -- things PRD SS4.2 assigns to the manager
+    persona rather than to individual agents."""
+    if not has_role_at_least(current_user, ROLE_MANAGER):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This action requires a manager or admin.",
+        )
+    return current_user
 
 
 async def require_admin(current_user: User = Depends(get_current_user)) -> User:
@@ -71,7 +101,7 @@ async def require_admin(current_user: User = Depends(get_current_user)) -> User:
     only read or that any signed-in user should be able to act on
     (submitting feedback, viewing the dashboard) keep depending on
     get_current_user alone."""
-    if current_user.role != ROLE_ADMIN:
+    if not has_role_at_least(current_user, ROLE_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This action requires an organization admin.",

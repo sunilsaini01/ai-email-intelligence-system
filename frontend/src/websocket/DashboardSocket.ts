@@ -9,7 +9,7 @@
 // connection never succeeds (e.g. a proxy that blocks WebSocket
 // upgrades) -- see docs/dashboard_performance.md.
 
-import { WS_BASE_URL } from "../api/client";
+import { WS_BASE_URL, getAuthToken } from "../api/client";
 
 export type DashboardEvent = { event: string; payload: unknown };
 type Listener = (event: DashboardEvent) => void;
@@ -28,8 +28,17 @@ export class DashboardSocket {
   }
 
   private open(): void {
+    // Browsers can't set an Authorization header on a WebSocket, so the
+    // login token travels as the second of two subprotocol values
+    // ("bearer", token) -- not in the URL, which would land in server
+    // access logs. See backend app/api/v1/endpoints/dashboard.py ws_router.
+    const token = getAuthToken();
+    if (!token) {
+      this.scheduleReconnect();
+      return;
+    }
     try {
-      this.socket = new WebSocket(`${WS_BASE_URL}/dashboard/ws`);
+      this.socket = new WebSocket(`${WS_BASE_URL}/dashboard/ws`, ["bearer", token]);
     } catch {
       this.scheduleReconnect();
       return;

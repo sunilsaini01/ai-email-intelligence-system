@@ -23,8 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.database.repositories.feedback_event_repository import FeedbackEventRepository
 from app.database.repositories.retraining_trigger_repository import RetrainingTriggerRepository
-from app.models.feedback_event import ACTION_CORRECTION, FeedbackEvent
+from app.models.feedback_event import ACTION_CONFIRM, ACTION_CORRECTION, FeedbackEvent
 from app.retrieval.tenant import DEFAULT_ORGANIZATION_ID
+from app.services.routing_feedback_service import recompute_routing_thresholds
 
 logger = logging.getLogger("app.dashboard.feedback")
 
@@ -58,6 +59,15 @@ async def record_feedback_event(
 
     if action == ACTION_CORRECTION:
         await _check_retraining_threshold(db, module)
+
+    # FR-41: routing feedback immediately re-tunes the organization's
+    # per-department auto-route thresholds. Best-effort like the rest of
+    # this function -- a failure here must never fail the feedback write.
+    if module == "routing" and action in (ACTION_CORRECTION, ACTION_CONFIRM):
+        try:
+            await recompute_routing_thresholds(db, organization_id)
+        except Exception:
+            logger.warning("routing_threshold_recompute_failed", exc_info=True)
 
     return event
 

@@ -15,7 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 
 # Install dependencies globally into the builder image (standard python paths)
-RUN pip install --no-cache-dir -r requirements.txt
+# Patient downloads: the dependency set is several GB (torch + CUDA wheels),
+# and pip's 15s default read timeout aborted a whole rebuild on a slow link.
+RUN pip install --no-cache-dir --default-timeout=120 --retries 10 -r requirements.txt
 
 # app/preprocessing/text_helpers.py and email_preprocessor.py import
 # nltk.corpus.stopwords at module load time -- the corpus is data, not

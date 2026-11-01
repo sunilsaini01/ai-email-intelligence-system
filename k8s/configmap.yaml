@@ -20,6 +20,14 @@ data:
   LOG_JSON: "true"
   CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
 
+  # Phase 22: the container root filesystem is read-only, so these point
+  # at writable PVC subdirectories (see api-deployment.yaml volumeMounts).
+  # JWT_KEY_DIR is only used while JWT_PRIVATE_KEY/JWT_PUBLIC_KEY are
+  # unset (non-production) -- every replica then shares one generated
+  # keypair from the volume instead of each minting its own.
+  FEEDBACK_LOG_DIR: "/var/lib/email-ai/feedback"
+  JWT_KEY_DIR: "/var/lib/email-ai/jwt"
+
   # postgres / kafka Service names (see k8s/postgres, k8s/kafka) -- not
   # localhost, not a Compose service name, a Kubernetes Service DNS name.
   POSTGRES_HOST: "postgres"

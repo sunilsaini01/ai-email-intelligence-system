@@ -31,14 +31,21 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth_dependency import get_current_user
+from app.core.auth_dependency import get_current_user, require_manager, user_for_token
 from app.database.session import get_db
 from app.models.feedback_event import (
     FEEDBACK_ACTIONS,  # noqa: F401 -- re-exported for API consumers/tests
 )
+from app.models.generated_report import GeneratedReport
 from app.models.user import User
+from app.schemas.admin import (
+    GeneratedReportListResponse,
+    GeneratedReportResponse,
+    SenderSentimentResponse,
+)
 from app.schemas.dashboard import (
     AgentWorkloadResponse,
     CategoryDistributionResponse,
@@ -55,6 +62,8 @@ from app.schemas.dashboard import (
 from app.services import dashboard_service
 from app.services.dashboard_broadcaster import DashboardBroadcaster, get_dashboard_broadcaster
 from app.services.dashboard_report_export import build_report_data, export_csv, export_pdf
+from app.services.sender_sentiment_service import WINDOW_DAYS as SENDER_WINDOW_DAYS
+from app.services.sender_sentiment_service import get_sender_trends
 
 router = APIRouter(prefix="/dashboard", tags=["Manager Dashboard & Analytics"])
 logger = logging.getLogger("app.dashboard")
@@ -173,19 +182,23 @@ async def confirm_review_item(
             subject=request.subject,
             predicted_value=request.predicted_value,
             confidence=request.confidence,
-            reviewer_id=request.reviewer_id,
+            reviewer_id=str(current_user.id),
         )
     except dashboard_service.AlreadyReviewedError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     broadcaster = get_dashboard_broadcaster()
-    await broadcaster.broadcast("review_queue_confirmed", {"prediction_id": str(prediction_id), "module": request.module})
+    await broadcaster.broadcast(
+        "review_queue_confirmed",
+        {"prediction_id": str(prediction_id), "module": request.module},
+        organization_id=current_user.organization_id,
+    )
     return ReviewQueueConfirmResponse(status="logged", feedback_id=str(event.id))
 
 
 @router.get("/reports/export")
 async def export_report(
     format: str = Query(description="'csv' or 'pdf'"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_manager),
     date_range: dashboard_service.DateRange = Depends(_date_range_dependency),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
@@ -210,17 +223,118 @@ async def export_report(
     )
 
 
-@router.websocket("/ws")
+@router.get("/reports/generated", response_model=GeneratedReportListResponse)
+async def list_generated_reports(
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(require_manager),
+    db: AsyncSession = Depends(get_db),
+) -> GeneratedReportListResponse:
+    """FR-56: the weekly reports the agents process generates
+    (app/services/scheduled_jobs.py generate_weekly_reports)."""
+    rows = (
+        await db.execute(
+            select(
+                GeneratedReport.id,
+                GeneratedReport.period_start,
+                GeneratedReport.period_end,
+                GeneratedReport.report_format,
+                func.length(GeneratedReport.content),
+                GeneratedReport.created_at,
+            )
+            .where(GeneratedReport.organization_id == current_user.organization_id)
+            .order_by(GeneratedReport.period_start.desc(), GeneratedReport.report_format)
+            .limit(limit)
+        )
+    ).all()
+    return GeneratedReportListResponse(
+        reports=[
+            GeneratedReportResponse(
+                id=r[0], period_start=r[1], period_end=r[2], report_format=r[3], size_bytes=r[4] or 0, created_at=r[5]
+            )
+            for r in rows
+        ]
+    )
+
+
+@router.get("/reports/generated/{report_id}")
+async def download_generated_report(
+    report_id: uuid.UUID,
+    current_user: User = Depends(require_manager),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    report = await db.get(GeneratedReport, report_id)
+    if report is None or report.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    media_type = "text/csv" if report.report_format == "csv" else "application/pdf"
+    filename = f"weekly_report_{report.period_start:%Y-%m-%d}.{report.report_format}"
+    return Response(
+        content=report.content,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/sentiment/senders", response_model=SenderSentimentResponse)
+async def sender_sentiment_trends(
+    sender_email: str | None = Query(default=None, description="Restrict to one sender."),
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SenderSentimentResponse:
+    """FR-32: per-sender sentiment trends, escalation candidates first."""
+    senders = await get_sender_trends(db, current_user.organization_id, sender_email=sender_email, limit=limit)
+    return SenderSentimentResponse(senders=senders, window_days=SENDER_WINDOW_DAYS)
+
+
+# The live-update socket is NOT on `router`: app/api/v1/router.py puts
+# `router` under protected_router, whose get_current_user dependency reads
+# an Authorization header via OAuth2PasswordBearer -- which crashes on a
+# WebSocket (no Request object) and which browsers can't send on a
+# WebSocket anyway. Since Phase 17 that made every connection fail with a
+# TypeError and the dashboard silently fell back to 30s polling.
+# `ws_router` stays outside protected_router and authenticates itself.
+ws_router = APIRouter(prefix="/dashboard", tags=["Manager Dashboard & Analytics"])
+
+# Browsers can only attach credentials to a WebSocket through the URL or
+# the Sec-WebSocket-Protocol header. The URL would put the token into
+# access logs, so the client sends two subprotocol values instead:
+# "bearer" and the token itself; the server echoes back only "bearer".
+WS_AUTH_SUBPROTOCOL = "bearer"
+WS_POLICY_VIOLATION = 1008
+
+
+def _token_from_subprotocols(websocket: WebSocket) -> str | None:
+    offered = [p.strip() for p in websocket.headers.get("sec-websocket-protocol", "").split(",") if p.strip()]
+    if len(offered) == 2 and offered[0] == WS_AUTH_SUBPROTOCOL:
+        return offered[1]
+    return None
+
+
+@ws_router.websocket("/ws")
 async def dashboard_websocket(
     websocket: WebSocket,
     broadcaster: DashboardBroadcaster = Depends(get_dashboard_broadcaster),
+    db: AsyncSession = Depends(get_db),
 ) -> None:
     """FR-54. In-process fan-out only -- see
     app/services/dashboard_broadcaster.py's module docstring for the
     documented single-process scaling limit. The client's 30s polling
     fallback (Stage 7) is what makes that limit degrade gracefully
-    instead of silently under-delivering updates."""
-    await broadcaster.connect(websocket)
+    instead of silently under-delivering updates.
+
+    Same identity rules as every HTTP endpoint (user_for_token: valid
+    token, existing and active user); events are delivered only for the
+    user's own organization."""
+    user = await user_for_token(_token_from_subprotocols(websocket), db)
+    if user is None:
+        # Closing before accept() rejects the handshake (HTTP 403).
+        await websocket.close(code=WS_POLICY_VIOLATION)
+        return
+    organization_id = user.organization_id
+    # The DB session isn't needed while the socket idles; don't hold it.
+    await db.close()
+
+    await broadcaster.connect(websocket, organization_id, subprotocol=WS_AUTH_SUBPROTOCOL)
     try:
         while True:
             # This endpoint is push-only from the server's side; it still

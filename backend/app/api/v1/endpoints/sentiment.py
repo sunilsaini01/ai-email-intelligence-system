@@ -74,6 +74,9 @@ async def predict_sentiment(
                 model_version=result["model_version"],
                 processing_ms=result["processing_ms"],
                 organization_id=current_user.organization_id,
+                sender_email=request.sender_email,
+                primary_emotion=result["primary_emotion"],
+                emotions=result["emotions"],
             ),
             timeout=DB_WRITE_TIMEOUT_SECONDS,
         )
@@ -86,6 +89,7 @@ async def predict_sentiment(
 @router.post("/feedback", response_model=SentimentFeedbackResponse)
 async def submit_sentiment_feedback(
     request: SentimentFeedbackRequest,
+    current_user: User = Depends(get_current_user),
     feedback_logger: FeedbackLogger = Depends(get_sentiment_feedback_logger),
     db: AsyncSession = Depends(get_db),
 ) -> SentimentFeedbackResponse:
@@ -104,7 +108,8 @@ async def submit_sentiment_feedback(
             action=ACTION_CORRECTION,
             original_value=request.predicted_label,
             corrected_value=request.corrected_label,
-            reviewer_id=request.reviewer_id,
+            organization_id=current_user.organization_id,
+            reviewer_id=str(current_user.id),
             reason=request.comment,
         )
     except Exception:

@@ -3,10 +3,9 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import jwt
 import pytest
 
-from app.core.config import get_settings
+from app.core.security import sign_jwt
 from app.ingestion.oauth_state import (
     STATE_EXPIRE_MINUTES,
     InvalidOAuthState,
@@ -39,7 +38,6 @@ def test_verify_rejects_a_malformed_token():
 
 
 def test_verify_rejects_an_expired_state():
-    settings = get_settings()
     now = datetime.now(UTC)
     expired_payload = {
         "org": "acme",
@@ -49,7 +47,7 @@ def test_verify_rejects_an_expired_state():
         "iat": now - timedelta(minutes=STATE_EXPIRE_MINUTES + 5),
         "exp": now - timedelta(minutes=5),
     }
-    expired_token = jwt.encode(expired_payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    expired_token = sign_jwt(expired_payload)
 
     with pytest.raises(InvalidOAuthState):
         verify_state(expired_token, expected_provider="gmail")
@@ -60,7 +58,7 @@ def test_verify_rejects_a_token_of_the_wrong_type():
     mailbox OAuth state, even if signed with the same SECRET_KEY."""
     from app.core.security import create_access_token
 
-    login_token = create_access_token(subject=str(USER_ID), organization_id="acme", role="member")
+    login_token = create_access_token(subject=str(USER_ID), organization_id="acme", role="agent")
 
     with pytest.raises(InvalidOAuthState):
         verify_state(login_token, expected_provider="gmail")

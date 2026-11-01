@@ -20,6 +20,18 @@ from pathlib import Path
 _DEFAULT_ARTIFACT_DIR = str(Path(__file__).resolve().parents[3] / "artifacts")
 
 
+def feedback_log_dir() -> Path:
+    """Settings.FEEDBACK_LOG_DIR when set (Phase 22: lets a read-only
+    container filesystem point feedback at a writable, persistent volume
+    -- see k8s/api-deployment.yaml), otherwise the repo's artifacts/ dir,
+    unchanged from before. Shared by the retraining data loader and GDPR
+    erasure so all three always agree on where these files live."""
+    from app.core.config import get_settings
+
+    configured = get_settings().FEEDBACK_LOG_DIR
+    return Path(configured) if configured else Path(_DEFAULT_ARTIFACT_DIR)
+
+
 class FeedbackLogger:
     """
     `module` defaults to "spam" so every existing caller (which never passed
@@ -29,9 +41,9 @@ class FeedbackLogger:
     another's, and each stays a simple, independently-inspectable append log.
     """
 
-    def __init__(self, artifact_dir: str = _DEFAULT_ARTIFACT_DIR, module: str = "spam"):
+    def __init__(self, artifact_dir: str | None = None, module: str = "spam"):
         self.module = module
-        self.path = Path(artifact_dir) / f"{module}_feedback.jsonl"
+        self.path = Path(artifact_dir or feedback_log_dir()) / f"{module}_feedback.jsonl"
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def log_correction(

@@ -74,6 +74,7 @@ from app.services.auto_reply_service import (
 )
 from app.services.feedback_event_service import record_feedback_event
 from app.services.feedback_service import FeedbackLogger, get_auto_reply_feedback_logger
+from app.services.intent_service import get_intent_service
 from app.services.retrieval_service import RetrievalService, get_retrieval_service
 
 router = APIRouter(prefix="/reply", tags=["Auto-Reply Generation"])
@@ -202,6 +203,25 @@ async def generate_reply(
         for c in selected
     ]
 
+    # FR-36: intent steers the draft. Caller-supplied when available,
+    # otherwise detected here; best-effort -- a missing intent model only
+    # loses the guidance, never the draft.
+    intents = request.intents
+    if intents is None:
+        try:
+            intent_result = await run_in_threadpool(get_intent_service().analyze, request.subject, request.body)
+            intents = [i["intent"] for i in intent_result["intents"]]
+        except Exception:
+            logger.warning("auto_reply_intent_detection_failed", exc_info=True)
+            intents = []
+
+    # FR-52: recent human-approved replies become style examples.
+    try:
+        approved_examples = await ReplyDraftRepository(db).list_approved_examples(current_user.organization_id)
+    except Exception:
+        logger.warning("auto_reply_approved_examples_failed", exc_info=True)
+        approved_examples = []
+
     try:
         outcome: GenerationOutcome = await asyncio.wait_for(
             run_in_threadpool(
@@ -210,6 +230,10 @@ async def generate_reply(
                 request.body,
                 context_items,
                 LLM_TIMEOUT_SECONDS,
+                category=request.category,
+                department=request.department,
+                intents=intents,
+                approved_examples=approved_examples,
             ),
             timeout=TOTAL_LATENCY_BUDGET_SECONDS,
         )
@@ -307,7 +331,7 @@ async def approve_reply_draft(
     draft = await repository.get_by_id(organization_id, draft_id)
     if draft is None:
         raise HTTPException(status_code=404, detail="Reply draft not found.")
-    draft = await repository.approve(draft, reviewer_id=request.reviewer_id)
+    draft = await repository.approve(draft, reviewer_id=str(current_user.id))
 
     _log_review_action(draft, action="approved")
     try:
@@ -361,7 +385,7 @@ async def edit_reply_draft(
     if draft is None:
         raise HTTPException(status_code=404, detail="Reply draft not found.")
     original_text = draft.generated_text
-    draft = await repository.edit(draft, edited_text=request.edited_text, reviewer_id=request.reviewer_id)
+    draft = await repository.edit(draft, edited_text=request.edited_text, reviewer_id=str(current_user.id))
 
     _log_review_action(draft, action="edited")
     try:
@@ -393,7 +417,7 @@ async def reject_reply_draft(
     draft = await repository.get_by_id(organization_id, draft_id)
     if draft is None:
         raise HTTPException(status_code=404, detail="Reply draft not found.")
-    draft = await repository.reject(draft, reviewer_id=request.reviewer_id)
+    draft = await repository.reject(draft, reviewer_id=str(current_user.id))
 
     _log_review_action(draft, action="rejected")
     try:
@@ -415,6 +439,7 @@ async def reject_reply_draft(
 @router.post("/feedback", response_model=ReplyFeedbackResponse)
 async def submit_reply_feedback(
     request: ReplyFeedbackRequest,
+    current_user: User = Depends(get_current_user),
     feedback_logger: FeedbackLogger = Depends(get_auto_reply_feedback_logger),
     db: AsyncSession = Depends(get_db),
 ) -> ReplyFeedbackResponse:
@@ -429,7 +454,8 @@ async def submit_reply_feedback(
             action=ACTION_RELEVANCE,
             prediction_id=request.draft_id,  # references reply_drafts.id
             corrected_value={"useful": request.useful},
-            reviewer_id=request.reviewer_id,
+            organization_id=current_user.organization_id,
+            reviewer_id=str(current_user.id),
             reason=request.comment,
         )
     except Exception:

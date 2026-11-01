@@ -39,16 +39,27 @@ export async function login(email: string, password: string): Promise<TokenRespo
   return response.json() as Promise<TokenResponse>;
 }
 
-export async function register(email: string, password: string, organizationId: string): Promise<AuthUser> {
-  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, organization_id: organizationId }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) {
     throw new ApiError(response.status, await parseErrorDetail(response));
   }
-  return response.json() as Promise<AuthUser>;
+  return response.json() as Promise<T>;
+}
+
+// Creates a NEW organization with the caller as its admin. There is no way
+// to join an existing organization from here -- that needs an admin's
+// invitation (acceptInvitation below).
+export function registerOrganization(email: string, password: string, organizationName: string): Promise<AuthUser> {
+  return postJson<AuthUser>("/auth/register", { email, password, organization_name: organizationName });
+}
+
+export function acceptInvitation(token: string, email: string, password: string): Promise<AuthUser> {
+  return postJson<AuthUser>("/auth/invitations/accept", { token, email, password });
 }
 
 export async function fetchMe(token: string): Promise<AuthUser> {

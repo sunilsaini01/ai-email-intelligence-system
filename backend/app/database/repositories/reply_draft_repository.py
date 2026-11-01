@@ -64,6 +64,24 @@ class ReplyDraftRepository:
         )
         return list(result.scalars().all())
 
+    async def list_approved_examples(self, organization_id: str, limit: int = 2) -> list[str]:
+        """FR-52: the most recent human-approved reply texts, used as style
+        examples for the next generation. EDITED drafts first -- a human
+        rewriting a draft is a stronger signal of "what a good reply looks
+        like here" than approving one unchanged."""
+        result = await self.session.execute(
+            select(ReplyDraft)
+            .where(
+                ReplyDraft.organization_id == organization_id,
+                ReplyDraft.status.in_((STATUS_EDITED, STATUS_APPROVED)),
+            )
+            .order_by(ReplyDraft.reviewed_at.desc().nulls_last())
+            .limit(limit * 3)
+        )
+        drafts = sorted(result.scalars().all(), key=lambda d: d.status != STATUS_EDITED)
+        texts = [(d.edited_text if d.status == STATUS_EDITED else d.generated_text) or "" for d in drafts]
+        return [t for t in texts if t.strip()][:limit]
+
     async def approve(self, draft: ReplyDraft, reviewer_id: str | None) -> ReplyDraft:
         draft.status = STATUS_APPROVED
         draft.reviewer_id = reviewer_id

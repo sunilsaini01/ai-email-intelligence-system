@@ -28,6 +28,7 @@ from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.mlops.feedback_training_data import augment_training_frame
 from app.evaluation.model_evaluator import evaluate_model
 from app.mlops.model_metadata import MODULE_EVIDENCE_STATUS
 from app.pipeline.pipeline_config import PipelineConfig
@@ -182,6 +183,9 @@ def main():
     preprocessor = EmailPreprocessor(PRIORITY_CONFIG)
 
     train_df = load_split("train")
+    # FR-61: reviewer corrections join the TRAIN split only, and only when
+    # the retraining runner asks for it -- see app/mlops/feedback_training_data.py.
+    train_df, feedback_rows_added = augment_training_frame(train_df, "priority")
     val_df = load_split("val")
     test_df = load_split("test")
 
@@ -244,6 +248,7 @@ def main():
         "meets_macro_target": bool(best_result["macro_f1"] >= macro_target),
         "meets_critical_high_target": bool(best_result["critical_high_f1"] >= critical_high_target),
         "train_size": len(train_df),
+        "feedback_rows_added": feedback_rows_added,
         "val_size": len(val_df),
         "test_size": len(test_df),
         "SYNTHETIC_DATA": True,

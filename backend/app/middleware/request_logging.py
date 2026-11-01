@@ -23,6 +23,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.core.metrics import HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL
+from app.core.request_principal import principal_from_headers
 
 logger = logging.getLogger("app.request")
 
@@ -47,6 +48,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         duration_seconds = time.perf_counter() - start_time
         duration_ms = round(duration_seconds * 1000, 2)
 
+        # PRD SS6.4 audit logging: every request line carries who made it
+        # (user + organization from the verified token; null when
+        # anonymous). The JSON log formatter adds the timestamp.
+        principal = principal_from_headers(request.headers)
         logger.info(
             "request_handled",
             extra={
@@ -55,6 +60,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 "path": request.url.path,
                 "status_code": response.status_code,
                 "duration_ms": duration_ms,
+                "user_id": principal.user_id,
+                "organization_id": principal.organization_id,
             },
         )
 

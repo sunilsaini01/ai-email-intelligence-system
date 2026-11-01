@@ -36,7 +36,7 @@ class RetrievalIndexRequest(BaseModel):
         description="Caller-supplied snapshot -- e.g. from /priority/predict. Not recomputed here. "
         "Phase 11 addition, used by the dashboard's SLA calculation (docs/architecture_dashboard.md).",
     )
-    organization_id: str = Field(default=DEFAULT_ORGANIZATION_ID)
+    organization_id: str = Field(default=DEFAULT_ORGANIZATION_ID, description="Deprecated and ignored -- the organization is the signed-in user's.")
 
 
 class RetrievalIndexResponse(BaseModel):
@@ -69,7 +69,7 @@ class RetrievalSearchRequest(BaseModel):
     category: str | None = Field(default=None, description="Filter (FR-46).")
     department: str | None = Field(default=None, description="Filter (FR-46).")
     resolution_status: str | None = Field(default=None, description="Filter (FR-46).")
-    organization_id: str = Field(default=DEFAULT_ORGANIZATION_ID)
+    organization_id: str = Field(default=DEFAULT_ORGANIZATION_ID, description="Deprecated and ignored -- the organization is the signed-in user's.")
 
 
 class RetrievalSearchResponse(BaseModel):
@@ -95,7 +95,7 @@ class RetrievalFeedbackRequest(BaseModel):
     result_email_id: uuid.UUID | None = Field(default=None, description="Which returned result this feedback is about, if any.")
     useful: bool = Field(description="Was this result actually relevant/useful?")
     comment: str | None = None
-    reviewer_id: str | None = Field(default=None, description="Caller-supplied, unauthenticated (Phase 11 FR-59).")
+    reviewer_id: str | None = Field(default=None, description="Deprecated and ignored -- the reviewer is the signed-in user (FR-59).")
 
 
 class RetrievalFeedbackResponse(BaseModel):

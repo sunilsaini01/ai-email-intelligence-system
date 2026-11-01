@@ -113,6 +113,31 @@ FEEDBACK_CORRECTIONS_TOTAL = Counter(
 )
 
 # ---------------------------------------------------------------------
+# Model drift (FR-72 "model accuracy drift") -- set by the agents
+# process's periodic drift check (app/services/scheduled_jobs.py). See
+# app/mlops/drift.py for what these measure and what they don't.
+# ---------------------------------------------------------------------
+
+MODEL_PREDICTION_DRIFT_PSI = Gauge(
+    "model_prediction_drift_psi",
+    "Population Stability Index of the last 7 days' predicted-label distribution vs. the 28 days before. "
+    "-1 when there is not enough data to compute it.",
+    ["module"],
+)
+
+MODEL_CORRECTION_RATE = Gauge(
+    "model_feedback_correction_rate",
+    "Feedback correction rate (FR-62 accuracy proxy) per window; -1 when nothing was reviewed.",
+    ["module", "window"],  # window: current | baseline
+)
+
+SLA_EMAILS = Gauge(
+    "sla_open_emails",
+    "Unresolved emails per SLA state, as of the last SLA sweep.",
+    ["state"],  # within_sla | at_risk | breached
+)
+
+# ---------------------------------------------------------------------
 # Kafka layer (application-side; consumer lag itself comes from
 # kafka-exporter scraping the broker directly, not from this app)
 # ---------------------------------------------------------------------

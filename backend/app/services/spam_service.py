@@ -17,6 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from app.inference.classifier_backend import SpamClassifierBackend
+from app.inference.explainability import explain_prediction
 from app.inference.spam_predictor import SpamPredictor
 from app.preprocessing.email_preprocessor import SPAM_CONFIG, EmailPreprocessor
 
@@ -80,7 +81,14 @@ class SpamService:
         spam_score = result.probabilities.get(self.predictor.positive_label, 0.0)
         is_spam = spam_score >= self.threshold
 
+        explanation = explain_prediction(self.predictor, cleaned, getattr(self.predictor, "positive_label", None))
+        if explanation is not None:
+            # Always explains the SPAM score (what drove quarantine), keyed
+            # by a readable name rather than the model's internal class id.
+            explanation["by_label"] = {"spam": next(iter(explanation["by_label"].values()), [])}
+
         return {
+            "explanation": explanation,
             "is_spam": is_spam,
             "status": "quarantined" if is_spam else "clear",
             "confidence": result.confidence,

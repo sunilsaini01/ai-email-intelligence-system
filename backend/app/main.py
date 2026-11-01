@@ -43,6 +43,7 @@ from app.core.logging import setup_logging
 from app.messaging.producer import start_producer, stop_producer
 from app.messaging.topic_admin import ensure_topics_exist
 from app.middleware.exception_handlers import register_exception_handlers
+from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.services.auto_reply_service import get_auto_reply_service
 from app.services.category_service import get_category_service
@@ -193,6 +194,13 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
         lifespan=lifespan,
     )
+
+    # PRD SS13.1 per-organization rate limit. Added FIRST so it sits
+    # innermost of the three: CORS still decorates a 429 (otherwise the
+    # browser reports an opaque CORS failure instead of the real error)
+    # and request logging still records it.
+    if settings.RATE_LIMIT_ENABLED:
+        app.add_middleware(RateLimitMiddleware)
 
     # Phase 11: allows the frontend/ dashboard (a different origin in dev,
     # e.g. localhost:5173) to call this API and open its WebSocket at all.

@@ -1,6 +1,8 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { DateRangePicker } from "./DateRangePicker";
 import { useAuth } from "../hooks/useAuth";
+import { useHasRole } from "../hooks/useAdmin";
+import { NotificationBell } from "./NotificationBell";
 
 const NAV_ITEMS = [
   { to: "/", label: "Overview", end: true },
@@ -14,11 +16,13 @@ const NAV_ITEMS = [
   { to: "/review-queue", label: "Human Review Queue" },
   { to: "/reply-drafts", label: "Reply Drafts" },
   { to: "/routing-rules", label: "Routing Rules" },
-  { to: "/reports", label: "Reports" },
+  { to: "/reports", label: "Reports", minRole: "manager" as const },
+  { to: "/admin", label: "Administration", minRole: "manager" as const },
 ];
 
 export function Layout() {
   const { user, logout } = useAuth();
+  const isManager = useHasRole("manager");
 
   return (
     <div className="app-shell">
@@ -26,7 +30,7 @@ export function Layout() {
         <h1 className="sidebar__title">Email Intelligence</h1>
         <p className="sidebar__subtitle">Manager Dashboard</p>
         <nav>
-          {NAV_ITEMS.map((item) => (
+          {NAV_ITEMS.filter((item) => !("minRole" in item) || isManager).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -38,8 +42,9 @@ export function Layout() {
           ))}
         </nav>
         <div className="sidebar__footer">
+          <NotificationBell />
           <span className="sidebar__user" title={user?.email}>
-            {user?.email}
+            {user?.email} ({user?.role})
           </span>
           <button type="button" className="preset-btn" onClick={logout}>
             Sign out

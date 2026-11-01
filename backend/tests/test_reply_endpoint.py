@@ -358,7 +358,7 @@ def _client_for_organization(session_factory, fake_retrieval_service, organizati
     from datetime import UTC, datetime
 
     from app.core.auth_dependency import get_current_user
-    from app.models.user import ROLE_MEMBER, User
+    from app.models.user import ROLE_AGENT, User
 
     client, fake_auto_reply_service = _make_client(session_factory, fake_retrieval_service, fake_llm_response)
 
@@ -368,7 +368,7 @@ def _client_for_organization(session_factory, fake_retrieval_service, organizati
             email=f"user@{organization_id}.example.com",
             hashed_password="unused",
             organization_id=organization_id,
-            role=ROLE_MEMBER,
+            role=ROLE_AGENT,
             is_active=True,
             created_at=datetime.now(UTC),
         )

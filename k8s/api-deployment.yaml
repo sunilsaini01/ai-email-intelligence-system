@@ -26,6 +26,22 @@ spec:
         # write to it -- without this the volume mounts root-owned and every
         # Chroma write fails with Permission denied.
         fsGroup: 1000
+      # Creates the PVC subdirectories the main container mounts via
+      # subPath. Left to the kubelet, a missing subPath directory is
+      # created root-owned and the non-root app could not write to it.
+      initContainers:
+        - name: prepare-volumes
+          image: email-ai-api:k8s
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "mkdir -p /pvc/feedback /pvc/jwt-keys"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: artifacts-chroma
+              mountPath: /pvc
       containers:
         - name: api
           image: email-ai-api:k8s
@@ -39,11 +55,28 @@ spec:
                 name: email-ai-secrets
           securityContext:
             allowPrivilegeEscalation: false
+            # PRD SS6.4 container security: nothing in the image is
+            # writable at runtime. Every path the app does write to is an
+            # explicit mount below -- emptyDirs for scratch space, the
+            # shared PVC for state that must survive restarts and be seen
+            # by every replica (JWT dev keys, feedback correction logs).
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           volumeMounts:
             - name: artifacts-chroma
               mountPath: /artifacts/chroma
+            - name: artifacts-chroma
+              mountPath: /var/lib/email-ai/feedback
+              subPath: feedback
+            - name: artifacts-chroma
+              mountPath: /var/lib/email-ai/jwt
+              subPath: jwt-keys
+            - name: tmp
+              mountPath: /tmp
+            # HuggingFace weight downloads (MiniLM, DistilBART) on warmup.
+            - name: model-cache
+              mountPath: /home/appuser/.cache
           # Model warmup (7 ML services + Chroma embedder + LLM provider,
           # see app/main.py lifespan) can take longer than a normal request
           # timeout. startupProbe absorbs that: liveness/readiness are not
@@ -81,3 +114,8 @@ spec:
         - name: artifacts-chroma
           persistentVolumeClaim:
             claimName: artifacts-chroma
+        - name: tmp
+          emptyDir: {}
+        - name: model-cache
+          emptyDir:
+            sizeLimit: 2Gi
